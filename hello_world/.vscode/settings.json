@@ -1,7 +1,0 @@
-{
-  "C_Cpp.intelliSenseEngine": "default",
-  "idf.espIdfPathWin": "C:\\Users\\olsso\\esp\\v5.5.1\\esp-idf",
-  "idf.toolsPathWin": "C:\\Users\\olsso\\.espressif",
-  "idf.pythonInstallPath": "C:\\Users\\olsso\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
-  "idf.flashType": "JTAG"
-}
