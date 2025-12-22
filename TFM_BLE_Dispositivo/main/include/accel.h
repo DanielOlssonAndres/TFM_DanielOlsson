@@ -1,7 +1,7 @@
 #ifndef ACCEL_H
 #define ACCEL_H
 
-#include <stdint.h>
+#include <stdint.h> /*Para gestion de los tipos de datos*/
 
 /* Estructura para los datos X, Y, Z */
 typedef struct {
@@ -10,7 +10,7 @@ typedef struct {
     int16_t z;
 } accel_data_t;
 
-/* Funciones */
+/* Declaraciones de funciones */
 void accel_init(void);
 accel_data_t accel_get_data(void);
 

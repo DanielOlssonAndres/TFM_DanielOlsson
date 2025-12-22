@@ -1,306 +1,171 @@
-/*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
 /* Includes */
 #include "gap.h"
 #include "common.h"
 #include "gatt_svc.h"
 
-/* Private function declarations */
-inline static void format_addr(char *addr_str, uint8_t addr[]);
-static void print_conn_desc(struct ble_gap_conn_desc *desc);
-static void start_advertising(void);
+/* Declaraciones de las funciones */
 static int gap_event_handler(struct ble_gap_event *event, void *arg);
 
-/* Private variables */
-static uint8_t own_addr_type;
-static uint8_t addr_val[6] = {0};
-static uint8_t esp_uri[] = {BLE_GAP_URI_PREFIX_HTTPS, '/', '/', 'e', 's', 'p', 'r', 'e', 's', 's', 'i', 'f', '.', 'c', 'o', 'm'};
+/* Variables globales */
+static uint8_t own_addr_type; /* Tipo de dirección del dispositivo */
+static uint8_t addr_val[6] = {0}; /* Dirección del dispositivo */
 
-/* Private functions */
-inline static void format_addr(char *addr_str, uint8_t addr[]) {
-    sprintf(addr_str, "%02X:%02X:%02X:%02X:%02X:%02X", addr[0], addr[1],
-            addr[2], addr[3], addr[4], addr[5]);
-}
+/* Definiciones de las funciones */
 
-static void print_conn_desc(struct ble_gap_conn_desc *desc) {
-    /* Local variables */
-    char addr_str[18] = {0};
+/*El dispositivo anuncia su existencia al mundo*/
+static void start_advertising(void) { 
 
-    /* Connection handle */
-    ESP_LOGI(TAG, "connection handle: %d", desc->conn_handle);
+    int rc = 0; /*Código de retorno para funciones*/
+    const char *name; /*Nombre del dispositivo*/
+    struct ble_hs_adv_fields adv_fields = {0}; /*Paquete de anuncio*/
+    struct ble_gap_adv_params adv_params = {0}; /*Parametros de tiempos y modos*/
 
-    /* Local ID address */
-    format_addr(addr_str, desc->our_id_addr.val);
-    ESP_LOGI(TAG, "device id address: type=%d, value=%s",
-             desc->our_id_addr.type, addr_str);
+    /* INICIO CONFIGURACION DE "adv_fields" ----------------------------------------- */
 
-    /* Peer ID address */
-    format_addr(addr_str, desc->peer_id_addr.val);
-    ESP_LOGI(TAG, "peer id address: type=%d, value=%s", desc->peer_id_addr.type,
-             addr_str);
-
-    /* Connection info */
-    ESP_LOGI(TAG,
-             "conn_itvl=%d, conn_latency=%d, supervision_timeout=%d, "
-             "encrypted=%d, authenticated=%d, bonded=%d\n",
-             desc->conn_itvl, desc->conn_latency, desc->supervision_timeout,
-             desc->sec_state.encrypted, desc->sec_state.authenticated,
-             desc->sec_state.bonded);
-}
-
-static void start_advertising(void) {
-    /* Local variables */
-    int rc = 0;
-    const char *name;
-    struct ble_hs_adv_fields adv_fields = {0};
-    struct ble_hs_adv_fields rsp_fields = {0};
-    struct ble_gap_adv_params adv_params = {0};
-
-    /* Set advertising flags */
+    /* General Discoverable: Siempre visible */
+    /* BR/EDR Unsupported: Indica que es solo BLE, no Bluetooth clasico */
     adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
-    /* Set device name */
-    name = ble_svc_gap_device_name();
-    adv_fields.name = (uint8_t *)name;
-    adv_fields.name_len = strlen(name);
-    adv_fields.name_is_complete = 1;
+    /* Ponemos nombre al dispositivo */
+    name = ble_svc_gap_device_name(); /*Nombre definido en "common" mediante DEVICE_NAME*/
+    adv_fields.name = (uint8_t *)name; /*Puntero al nombre*/
+    adv_fields.name_len = strlen(name); /*Longitud del nombre*/
+    adv_fields.name_is_complete = 1; /*Indica que el nombre es completo, no abreviatura*/
 
-    /* Set device tx power */
-    adv_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-    adv_fields.tx_pwr_lvl_is_present = 1;
-
-    /* Set device appearance */
-    adv_fields.appearance = BLE_GAP_APPEARANCE_GENERIC_TAG;
+    /* Ponemos el icono de un "WRIST WORN" (estetico) */
+    adv_fields.appearance = 0x03C0; 
     adv_fields.appearance_is_present = 1;
 
-    /* Set device LE role */
+    /* Anunciamos explicitamente que el dispositivo es un periférico (buena practica)*/
     adv_fields.le_role = BLE_GAP_LE_ROLE_PERIPHERAL;
     adv_fields.le_role_is_present = 1;
 
-    /* Set advertiement fields */
+    /* Aplicamos la configuracion de los campos de anuncio */
     rc = ble_gap_adv_set_fields(&adv_fields);
     if (rc != 0) {
-        ESP_LOGE(TAG, "failed to set advertising data, error code: %d", rc);
+        ESP_LOGE("GAP", "ERROR en config. de adv_fields. ERROR code: %d", rc);
         return;
     }
 
-    /* Set device address */
-    rsp_fields.device_addr = addr_val;
-    rsp_fields.device_addr_type = own_addr_type;
-    rsp_fields.device_addr_is_present = 1;
+    /* FIN CONFIGURACION DE "adv_fields" -------------------------------------------- */
 
-    /* Set URI */
-    rsp_fields.uri = esp_uri;
-    rsp_fields.uri_len = sizeof(esp_uri);
+    /* INICIO CONFIGURACION DE "adv_params" ----------------------------------------- */
 
-    /* Set advertising interval */
-    rsp_fields.adv_itvl = BLE_GAP_ADV_ITVL_MS(500);
-    rsp_fields.adv_itvl_is_present = 1;
-
-    /* Set scan response fields */
-    rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "failed to set scan response data, error code: %d", rc);
-        return;
-    }
-
-    /* Set non-connetable and general discoverable mode to be a beacon */
+    /* Undirected: Acepta conexiones (suscripciones) de cualquier dispositivo */
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+
+    /* General discoverable: Siempre es visible */
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
-    /* Set advertising interval */
+    /* Se manda el anuncio cada 500-510 ms (para evitar colisiones) */
     adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(500);
     adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(510);
 
-    /* Start advertising */
-    rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &adv_params,
-                           gap_event_handler, NULL);
+    /* Comenzar a anunciarse */
+    rc = ble_gap_adv_start(
+                        own_addr_type, /*Tipo de dirección del dispositivo*/
+                        NULL, /*Dirección del destinatario (no usada en este caso)*/
+                        BLE_HS_FOREVER, /*Duración del anuncio*/
+                        &adv_params, /*Parametros de anuncio*/
+                        gap_event_handler, /*Callback de conexión*/
+                        NULL /*Argumento para el callback de conexión*/
+                    );
     if (rc != 0) {
-        ESP_LOGE(TAG, "failed to start advertising, error code: %d", rc);
+        ESP_LOGE("GAP", "ERROR en comienzo de anuncio. ERROR code: %d", rc);
         return;
     }
-    ESP_LOGI(TAG, "advertising started!");
+
+    /* FIN CONFIGURACION DE "adv_params" -------------------------------------------- */
+
+    ESP_LOGI("GAP", "Advertising started");
 }
 
-/*
- * NimBLE applies an event-driven model to keep GAP service going
- * gap_event_handler is a callback function registered when calling
- * ble_gap_adv_start API and called when a GAP event arrives
- */
+/* Funcion de callback cuando se produce un evento GAP */
 static int gap_event_handler(struct ble_gap_event *event, void *arg) {
-    /* Local variables */
-    int rc = 0;
-    struct ble_gap_conn_desc desc;
+    
+    int rc = 0; /*Código de retorno para funciones*/
+    struct ble_gap_conn_desc desc; /*Descriptor de la conexión*/
 
-    /* Handle different GAP event */
+    /* Manejo de eventos */
     switch (event->type) {
-
-    /* Connect event */
-    case BLE_GAP_EVENT_CONNECT:
-        /* A new connection was established or a connection attempt failed. */
-        ESP_LOGI(TAG, "connection %s; status=%d",
-                 event->connect.status == 0 ? "established" : "failed",
-                 event->connect.status);
-
-        /* Connection succeeded */
-        if (event->connect.status == 0) {
-            /* Check connection handle */
-            rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
-            if (rc != 0) {
-                ESP_LOGE(TAG,
-                         "failed to find connection by handle, error code: %d",
-                         rc);
-                return rc;
+        case BLE_GAP_EVENT_CONNECT: /* Evento de conexión */
+            if (event->connect.status == 0) { /* Conexión exitosa */
+                rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
+                if (rc != 0) {
+                    ESP_LOGE("GAP","ERROR de conexion. ERROR code: %d", rc);
+                }
+                ESP_LOGI("GAP", "Evento de conexion");
             }
-
-            /* Print connection descriptor */
-            print_conn_desc(&desc);
-
-            /* Try to update connection parameters */
-            struct ble_gap_upd_params params = {.itvl_min = desc.conn_itvl,
-                                                .itvl_max = desc.conn_itvl,
-                                                .latency = 3,
-                                                .supervision_timeout =
-                                                    desc.supervision_timeout};
-            rc = ble_gap_update_params(event->connect.conn_handle, &params);
-            if (rc != 0) {
-                ESP_LOGE(
-                    TAG,
-                    "failed to update connection parameters, error code: %d",
-                    rc);
-                return rc;
+            else { /* Conexión fallida */
+            start_advertising(); /* Reiniciar anuncio */
             }
-        }
-        /* Connection failed, restart advertising */
-        else {
+            break;
+
+        case BLE_GAP_EVENT_DISCONNECT: /* Evento de desconexión */
+            ESP_LOGI("GAP", "Evento de desconexion");
+            start_advertising(); /* Reiniciar anuncio */
+            break;
+
+        case BLE_GAP_EVENT_ADV_COMPLETE: /* Evento de anuncio completado */
+            /* No se usa en este caso pero se pone por buena practica*/
+            ESP_LOGI("GAP", "Evento de anuncio completado");
             start_advertising();
-        }
-        return rc;
+            break;
 
-    /* Disconnect event */
-    case BLE_GAP_EVENT_DISCONNECT:
-        /* A connection was terminated, print connection descriptor */
-        ESP_LOGI(TAG, "disconnected from peer; reason=%d",
-                 event->disconnect.reason);
+        case BLE_GAP_EVENT_SUBSCRIBE: /* Evento de suscripción */
+            ESP_LOGI("GAP", "Evento de suscripcion");
+            /*Poner "sensor_notify_enabled = true" mediante callback*/
+            gatt_svr_subscribe_cb(event);
+            break;
 
-        /* Restart advertising */
-        start_advertising();
-        return rc;
-
-    /* Connection parameters update event */
-    case BLE_GAP_EVENT_CONN_UPDATE:
-        /* The central has updated the connection parameters. */
-        ESP_LOGI(TAG, "connection updated; status=%d",
-                 event->conn_update.status);
-
-        /* Print connection descriptor */
-        rc = ble_gap_conn_find(event->conn_update.conn_handle, &desc);
-        if (rc != 0) {
-            ESP_LOGE(TAG, "failed to find connection by handle, error code: %d",
-                     rc);
-            return rc;
-        }
-        print_conn_desc(&desc);
-        return rc;
-
-    /* Advertising complete event */
-    case BLE_GAP_EVENT_ADV_COMPLETE:
-        /* Advertising completed, restart advertising */
-        ESP_LOGI(TAG, "advertise complete; reason=%d",
-                 event->adv_complete.reason);
-        start_advertising();
-        return rc;
-
-    /* Notification sent event */
-    case BLE_GAP_EVENT_NOTIFY_TX:
-        if ((event->notify_tx.status != 0) &&
-            (event->notify_tx.status != BLE_HS_EDONE)) {
-            /* Print notification info on error */
-            ESP_LOGI(TAG,
-                     "notify event; conn_handle=%d attr_handle=%d "
-                     "status=%d is_indication=%d",
-                     event->notify_tx.conn_handle, event->notify_tx.attr_handle,
-                     event->notify_tx.status, event->notify_tx.indication);
-        }
-        return rc;
-
-    /* Subscribe event */
-    case BLE_GAP_EVENT_SUBSCRIBE:
-        /* Print subscription info to log */
-        ESP_LOGI(TAG,
-                 "subscribe event; conn_handle=%d attr_handle=%d "
-                 "reason=%d prevn=%d curn=%d previ=%d curi=%d",
-                 event->subscribe.conn_handle, event->subscribe.attr_handle,
-                 event->subscribe.reason, event->subscribe.prev_notify,
-                 event->subscribe.cur_notify, event->subscribe.prev_indicate,
-                 event->subscribe.cur_indicate);
-
-        /* GATT subscribe event callback */
-        gatt_svr_subscribe_cb(event);
-        return rc;
-
-    /* MTU update event */
-    case BLE_GAP_EVENT_MTU:
-        /* Print MTU update info to log */
-        ESP_LOGI(TAG, "mtu update event; conn_handle=%d cid=%d mtu=%d",
-                 event->mtu.conn_handle, event->mtu.channel_id,
-                 event->mtu.value);
-        return rc;
+        default:
+            ESP_LOGI("GAP", "Evento no definido: %d", event->type);
+            return 0;
+            break;
     }
 
     return rc;
 }
 
 
-/* Public functions */
+/* Funciones publicas */
+
+/* Inicializa el anuncio */
 void adv_init(void) {
-    /* Local variables */
-    int rc = 0;
-    char addr_str[18] = {0};
 
-    /* Make sure we have proper BT identity address set (random preferred) */
+    int rc = 0; /*Código de retorno para funciones*/
+
+    /* Verificar que el dispositivo tenga una dirección BT disponible */
     rc = ble_hs_util_ensure_addr(0);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "device does not have any available bt address!");
-        return;
-    }
 
-    /* Figure out BT address to use while advertising (no privacy for now) */
+    /* Decidir que tipo de direccion usar (auto) */
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0) {
-        ESP_LOGE(TAG, "failed to infer address type, error code: %d", rc);
+        ESP_LOGE("GAP", "ERROR al decidir una direccion. ERROR code: %d", rc);
         return;
     }
 
-    /* Printing ADDR */
+    /* Imprimir la direccion */
     rc = ble_hs_id_copy_addr(own_addr_type, addr_val, NULL);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "failed to copy device address, error code: %d", rc);
-        return;
-    }
-    format_addr(addr_str, addr_val);
-    ESP_LOGI(TAG, "device address: %s", addr_str);
+    ESP_LOG_BUFFER_HEX("GAP", addr_val, 6); /* Imprimir la dirección en hexadecimal */
 
-    /* Start advertising. */
+    /* Comenzar el anuncio */
     start_advertising();
 }
 
+/* Inicializa el GAP */
 int gap_init(void) {
-    /* Local variables */
-    int rc = 0;
 
-    /* Call NimBLE GAP initialization API */
+    int rc = 0; /*Código de retorno para funciones*/
+
+    /* Inicializar el servicio GAP */
+    /*Crea el servicio "Generic Access" para cumplir con el estandar Bluetooth*/
     ble_svc_gap_init();
 
-    /* Set GAP device name */
+    /* Configurar el nombre del dispositivo */
     rc = ble_svc_gap_device_name_set(DEVICE_NAME);
     if (rc != 0) {
-        ESP_LOGE(TAG, "failed to set device name to %s, error code: %d",
-                 DEVICE_NAME, rc);
-        return rc;
+        ESP_LOGE("GAP", "ERROR al configurar el nombre del dispositivo, ERROR code: %d", rc);
     }
     return rc;
 }

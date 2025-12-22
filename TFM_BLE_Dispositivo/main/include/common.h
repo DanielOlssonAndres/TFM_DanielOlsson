@@ -1,8 +1,3 @@
-/*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
 #ifndef COMMON_H
 #define COMMON_H
 
@@ -12,6 +7,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h> /*Para gestion de los tipos de datos*/
 
 /* ESP APIs */
 #include "esp_log.h"
@@ -30,8 +26,8 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 
-/* Defines */
-#define TAG "NimBLE_GATT_Server"
-#define DEVICE_NAME "NimBLE_GATT"
+/* Defines para la aplicacion*/
+#define TAG "NimBLE_GATT_Server" /*Etiqueta por defecto para los mensajes por el terminal*/
+#define DEVICE_NAME "Puls_1" /*Nombre del dispositivo BLE que se mostrara al escanear*/
 
 #endif // COMMON_H

@@ -1,11 +1,9 @@
 #include "accel.h"
-#include "esp_log.h"
-
-static const char *TAG = "ACCEL";
+#include "common.h"
 
 void accel_init(void) {
-    // Aquí iría la configuración I2C real en el futuro
-    ESP_LOGI(TAG, "Acelerometro inicializado (MOCK)");
+    
+    ESP_LOGI("ACCEL", "Acelerometro inicializado"); /*Mensaje por terminal de tipo INFO*/
 }
 
 accel_data_t accel_get_data(void) {
