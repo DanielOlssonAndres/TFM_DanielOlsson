@@ -2,136 +2,114 @@
 #include "common.h"
 #include "accel.h" 
 
-/* Declaración de la función de acceso (callback) */
+/* Declaracion de la funcion de acceso (callback) */
 static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                             struct ble_gatt_access_ctxt *ctxt, void *arg);
 
-/* Variables Privadas */
-
-/* * UUIDs Personalizados para tu TFM 
- * (Es buena práctica no usar UUIDs reservados si no sigues el estándar estricto)
- * Servicio: 0x00FF
- * Característica: 0xFF01
- */
+/* UUID del servicio del acelerometro */
 static const ble_uuid16_t accel_svc_uuid = BLE_UUID16_INIT(0x00FF);
+/* UUID de la característica del acelerometro */
 static const ble_uuid16_t accel_chr_uuid = BLE_UUID16_INIT(0xFF01);
 
-/* Handles (Manejadores) para saber dónde escribir/notificar */
-static uint16_t accel_chr_val_handle;
-static uint16_t accel_chr_conn_handle = 0;
-static bool accel_chr_conn_handle_inited = false;
-static bool accel_notify_status = false; 
+/* Handles para saber donde escribir/notificar */
+static uint16_t accel_chr_val_handle; /*Identificador de la caracteristica de acelerometro*/
+static uint16_t accel_chr_conn_handle = 0; /*Identificador del cliente (raspi)*/
+static bool accel_chr_conn_handle_inited = false; /*Indica si "accel_chr_conn_handle" tiene un valor valido*/
+static bool accel_notify_status = false; /*Indica si el cliente está suscrito*/
 
-/* Tabla de Servicios GATT */
+/* Tabla de servicios GATT */
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     {
         /* Servicio de Acelerómetro */
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = &accel_svc_uuid.u,
-        .characteristics = (struct ble_gatt_chr_def[]) {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY, /*Servicio primario*/
+        .uuid = &accel_svc_uuid.u, /*UUID del servicio*/
+        .characteristics = (struct ble_gatt_chr_def[]) { /*Sub-lista de caracteristicas*/
             {
-                /* Característica de Datos (Lectura y Notificación) */
-                .uuid = &accel_chr_uuid.u,
-                .access_cb = accel_chr_access,
-                /* Usamos NOTIFY en vez de INDICATE porque es más rápido para sensores */
+                .uuid = &accel_chr_uuid.u, /*UUID del dato*/
+                .access_cb = accel_chr_access, /*Callback de acceso a la característica*/
+                /*(Permisos). READ: Se puede preguntar puntualmente por los valores. NOTIFY: Envio de datos proactivamente*/
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY, 
-                .val_handle = &accel_chr_val_handle
+                .val_handle = &accel_chr_val_handle /*Identificador de la caracteristica de acelerometro*/
             },
             {
-                0, /* Fin de características */
+                0, /*Fin de la lista de características*/
             }
         },
     },
     {
-        0, /* Fin de servicios */
+        0, /*Fin de la lista de servicios*/
     },
 };
 
-/* Función que se ejecuta cuando el móvil lee o se suscribe */
+/* Callback de acceso a la característica */
+/*Argumentos: Quien pregunta, que caracteristica pide, donde se devuelve el dato*/
 static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                             struct ble_gatt_access_ctxt *ctxt, void *arg) {
     
+    accel_data_t data;
+    int rc;
+
     // Si el móvil intenta LEER (Read Request)
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        if (attr_handle == accel_chr_val_handle) {
-            // 1. Obtenemos el dato mock
-            accel_data_t data = accel_get_data();
-            
-            // 2. Lo empaquetamos en el buffer de salida
-            int rc = os_mbuf_append(ctxt->om, &data, sizeof(data));
-            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+        if (attr_handle == accel_chr_val_handle) { /* Se mira si se piden los datos del acelerometro */
+            /* Obtenemos el dato mock */
+            data = accel_get_data();
+            /* Se mete el dato dentro de "ble_gatt_access_ctxt" */
+            rc = os_mbuf_append(ctxt->om, &data, sizeof(data));
+            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES; /* Error si hay fallo en empaquetado */
         }
     }
 
+    /* Si se intenta escribir, que no lo hemos habilitado, el if es falso y devolvemos error */
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* Función Pública: Enviar datos al móvil activamente */
+/* Funcion para enviar datos activamente */
 void send_accel_notification(void) {
+
+    accel_data_t data;
+    struct os_mbuf *om;
+    int rc;
+
+    /* Verificamos que el cliente esta suscrito y hay una conexion valida */
     if (accel_notify_status && accel_chr_conn_handle_inited) {
-        // 1. Leemos el dato mock
-        accel_data_t data = accel_get_data();
+        /* Lectura del dato para hacer una copia */
+        data = accel_get_data();
 
-        // 2. Empaquetamos el dato en un 'mbuf' de NimBLE
-        // ble_hs_mbuf_from_flat convierte tus datos crudos en el formato que NimBLE quiere.
-        struct os_mbuf *om = ble_hs_mbuf_from_flat(&data, sizeof(data));
+        /* Empaquetamos el dato en un 'mbuf' de NimBLE */
+        /*ble_hs_mbuf_from_flat convierte los datos crudos en el formato adecuado para NimBLE*/
+        om = ble_hs_mbuf_from_flat(&data, sizeof(data));
 
-        // 3. Enviamos la notificación
-        // Ahora sí le pasamos el 'om' (3 argumentos, no 4)
-        int rc = ble_gatts_notify_custom(accel_chr_conn_handle, 
-                                         accel_chr_val_handle, 
-                                         om);
-        
+        /* Se envia la notificacion */
+        rc = ble_gatts_notify_custom(accel_chr_conn_handle, accel_chr_val_handle, om);
         if (rc == 0) {
-            ESP_LOGI(TAG, "Notificación enviada: X=%d Y=%d Z=%d", data.x, data.y, data.z);
+            ESP_LOGI("GATTsvc", "Notificacion enviada: X=%d Y=%d Z=%d", data.x, data.y, data.z);
         } else {
-            ESP_LOGE(TAG, "Error al notificar: %d", rc);
+            ESP_LOGE("GATTsvc", "ERROR al notificar. ERROR code: %d", rc);
         }
     }
 }
 
-/* Callback de suscripción (cuando activas la campanita en el móvil) */
+/* Callback de suscripcion (cuando se activa la suscripcion) */
 void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
-    if (event->subscribe.attr_handle == accel_chr_val_handle) {
-        accel_chr_conn_handle = event->subscribe.conn_handle;
-        accel_chr_conn_handle_inited = true;
-        accel_notify_status = event->subscribe.cur_notify; // Guardamos si activó notificaciones
-        
-        ESP_LOGI(TAG, "Suscripción actualizada. Notificar: %d", accel_notify_status);
+    /* Verificamos la caracteristica a la que se ha suscrito */
+    if (event->subscribe.attr_handle == accel_chr_val_handle) { /*Acelerometro*/
+        accel_chr_conn_handle = event->subscribe.conn_handle; /*Destinatario*/
+        accel_chr_conn_handle_inited = true; /*Indicador de conexion inicializada*/
+        accel_notify_status = event->subscribe.cur_notify; /*Estado de la suscripcion*/
     }
 }
 
-/* Inicialización del Servicio (Igual que antes) */
+/* Inicializacion del servicio */
 int gatt_svc_init(void) {
+    
     int rc;
-    ble_svc_gatt_init();
-    rc = ble_gatts_count_cfg(gatt_svr_svcs);
+
+    ble_svc_gatt_init(); /*Inicializa el servicio GATT (obligatorio por estandar)*/
+    rc = ble_gatts_count_cfg(gatt_svr_svcs); /*Contamos los servicios (seguridad)*/
     if (rc != 0) return rc;
-    rc = ble_gatts_add_svcs(gatt_svr_svcs);
+    rc = ble_gatts_add_svcs(gatt_svr_svcs); /*Agregamos los servicios definidos*/
     if (rc != 0) return rc;
     return 0;
 }
 
-/* * Callback para registrar eventos GATT 
- * (Necesario para que el main.c no de error al compilar)
- */
-void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg) {
-    char buf[BLE_UUID_STR_LEN];
-
-    switch (ctxt->op) {
-    case BLE_GATT_REGISTER_OP_SVC:
-        ESP_LOGD(TAG, "Servicio registrado %s handle=%d",
-                 ble_uuid_to_str(ctxt->svc.svc_def->uuid, buf),
-                 ctxt->svc.handle);
-        break;
-
-    case BLE_GATT_REGISTER_OP_CHR:
-        ESP_LOGD(TAG, "Caracteristica registrada %s handle=%d",
-                 ble_uuid_to_str(ctxt->chr.chr_def->uuid, buf),
-                 ctxt->chr.val_handle);
-        break;
-
-    default:
-        break;
-    }
-}

@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "Prueba_BLE",
-    "project_version":    "03a1b4d-dirty",
+    "project_version":    "4814098-dirty",
     "project_path":       "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo",
     "idf_path":           "C:/Users/olsso/esp/v5.5.1/esp-idf",
     "build_dir":          "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build",

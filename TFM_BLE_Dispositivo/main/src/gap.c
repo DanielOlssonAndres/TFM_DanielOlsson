@@ -118,6 +118,33 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
             gatt_svr_subscribe_cb(event);
             break;
 
+            case BLE_GAP_EVENT_CONN_UPDATE: /* Evento de actualizacion de parametros de conexion */
+            ESP_LOGI("GAP", "Evento de parametros de conexion actualizados (Event 3)");
+            break;
+
+        case BLE_GAP_EVENT_CONN_UPDATE_REQ: /* Evento de peticion de actualizacion de parametros */
+            ESP_LOGI("GAP", "Evento de peticion de actualizacion de parametros recibida (Event 4)");
+            return 0; 
+
+        case BLE_GAP_EVENT_REPEAT_PAIRING: /* Evento de re-emparejamiento */
+            /* Si el móvil ya tenía claves antiguas, permitimos que intente emparejarse de nuevo */
+            /* Para reconectar automáticamente tras borrar la flash del ESP32 */
+            ESP_LOGI("GAP", "Evento de intento de re-emparejamiento");
+            rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
+            if (rc != 0) {
+                return BLE_GAP_REPEAT_PAIRING_IGNORE;
+            }
+            return BLE_GAP_REPEAT_PAIRING_RETRY;
+
+        case BLE_GAP_EVENT_MTU: /* Evento de MTU actualizado */
+            ESP_LOGI("GAP", "Evento de MTU actualizado a %d bytes", event->mtu.value);
+            break;
+
+        case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE: /* Evento 38 */
+            /* Se ha negociado la velocidad física (1M o 2M) */
+            ESP_LOGI("GAP", "Evento de velocidad fisica actualizada");
+            break;
+
         default:
             ESP_LOGI("GAP", "Evento no definido: %d", event->type);
             return 0;

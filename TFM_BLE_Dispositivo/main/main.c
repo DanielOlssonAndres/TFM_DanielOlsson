@@ -1,124 +1,94 @@
-/*
- * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
-/* Includes */
 #include "common.h"
 #include "gap.h"
 #include "gatt_svc.h"
 #include "accel.h"
 
-/* Library function declarations */
+/* Para guardar info de Bluetooth como claves a largo plazo*/
+/*Definida en libreria de NimBLE*/
 void ble_store_config_init(void);
 
-/* Private function declarations */
-static void on_stack_reset(int reason);
-static void on_stack_sync(void);
-static void nimble_host_config_init(void);
-static void nimble_host_task(void *param);
-
-/* Private functions */
-/*
- *  Stack event callback functions
- *      - on_stack_reset is called when host resets BLE stack due to errors
- *      - on_stack_sync is called when host has synced with controller
- */
-static void on_stack_reset(int reason) {
-    /* On reset, print reset reason to console */
-    ESP_LOGI(TAG, "nimble stack reset, reset reason: %d", reason);
-}
-
+/* Callback que se produce cuando el hardware esta listo */
 static void on_stack_sync(void) {
-    /* On stack sync, do advertising initialization */
-    adv_init();
+    adv_init();  /* Comienza el anuncio*/
 }
 
+/* Configuracion de NimBLE */
 static void nimble_host_config_init(void) {
     /* Set host callbacks */
-    ble_hs_cfg.reset_cb = on_stack_reset;
-    ble_hs_cfg.sync_cb = on_stack_sync;
-    ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
-    ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+    ble_hs_cfg.sync_cb = on_stack_sync; /* Funcion que se ejecuta despues de arrancar NimBLE*/
+    ble_hs_cfg.store_status_cb = ble_store_util_status_rr; /* Gestion de memoria FLASH */
 
-    /* Store host configuration */
-    ble_store_config_init();
+    ble_store_config_init(); /* Leer configuraciones antiguas si las hay */
 }
 
+/* Tarea FreeRTOS */
+/* Mantener vivo el sistema Bluetooth*/
 static void nimble_host_task(void *param) {
-    /* Task entry log */
-    ESP_LOGI(TAG, "nimble host task has been started!");
 
-    /* This function won't return until nimble_port_stop() is executed */
-    nimble_port_run();
-
-    /* Clean up at exit */
-    vTaskDelete(NULL);
+    nimble_port_run(); /* Bucle infinito de funcionamiento de Bluetooth */
+    vTaskDelete(NULL); /* No deberia llegar aqui nunca (Buena practica) */
 }
 
+/* Tarea FreeRTOS */
+/* Leer sensor y generar los datos */
 static void accelerometer_task(void *param) {
-    ESP_LOGI(TAG, "Tarea de Acelerometro iniciada");
 
     while (1) {
-        /* Enviar dato si hay alguien escuchando */
-        send_accel_notification();
-
-        /* Esperar 1 segundo (luego bajaremos esto para tener más velocidad) */
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        send_accel_notification(); /* Enviar dato si hay alguien escuchando */
+        vTaskDelay(pdMS_TO_TICKS(1000)); /* "MANDAR 1 DATO CADA X ms" */
     }
-    vTaskDelete(NULL);
+
+    vTaskDelete(NULL); /* No deberia llegar aqui nunca (Buena practica) */
 }
 
+/* --------------------- MAIN ---------------------------*/
+
 void app_main(void) {
-    /* Local variables */
+
     int rc;
-    esp_err_t ret;
+    esp_err_t ret; /* Retrono para errores en ESP-IDF */
 
-    /* Acelerometro initialization */
-    accel_init();
+    accel_init(); /* Inicializar el acelerometro */
 
-    /*
-     * NVS flash initialization
-     * Dependency of BLE stack to store configurations
-     */
-    ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ret = nvs_flash_init(); /* Inicializar memoria NVS para Bluetooth */
+    /* Mecanismo de autoreparacion de memoria corrupta o llena */
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "failed to initialize nvs flash, error code: %d ", ret);
+        ESP_LOGE("MAIN", "ERROR de memoria NVS flash. ERROR code: %d ", ret);
         return;
     }
 
-    /* NimBLE stack initialization */
+    /* Inicializar pila NimBLE en RAM */
     ret = nimble_port_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "failed to initialize nimble stack, error code: %d ",
-                 ret);
+        ESP_LOGE("MAIN", "ERROR de pila NimBLE. ERROR code: %d ", ret);
         return;
     }
 
-    /* GAP service initialization */
+    /* Inicializar servicio GAP */
     rc = gap_init();
     if (rc != 0) {
-        ESP_LOGE(TAG, "failed to initialize GAP service, error code: %d", rc);
+        ESP_LOGE("MAIN", "ERROR de servicio GAP. ERROR code: %d", rc);
         return;
     }
 
     /* GATT server initialization */
     rc = gatt_svc_init();
     if (rc != 0) {
-        ESP_LOGE(TAG, "failed to initialize GATT server, error code: %d", rc);
+        ESP_LOGE("MAIN", "failed to initialize GATT server, error code: %d", rc);
         return;
     }
 
-    /* NimBLE host configuration initialization */
+    /* Inicializar la configuracion de NimBLE */
     nimble_host_config_init();
 
-    /* Start NimBLE host task thread and return */
-    xTaskCreate(nimble_host_task, "NimBLE Host", 4*1024, NULL, 5, NULL);
-    xTaskCreate(accelerometer_task, "Accel Task", 4*1024, NULL, 5, NULL);
+    /* Crear tareas FreeRTOS */
+    /* ARGUMENTOS: Funcion a ejecutar, Nombre, Tamaño de pila, Parametros, Prioridad, Handle */
+    xTaskCreate(nimble_host_task, "NimBLE_Host", 4*1024, NULL, 5, NULL); /* Tarea Bluetooth NimBLE */
+    xTaskCreate(accelerometer_task, "Accel_Task", 4*1024, NULL, 4, NULL); /* Tarea Acelerometro */
+    
     return;
 }

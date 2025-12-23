@@ -26,8 +26,7 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 
-/* Defines para la aplicacion*/
-#define TAG "NimBLE_GATT_Server" /*Etiqueta por defecto para los mensajes por el terminal*/
+/* Defines */
 #define DEVICE_NAME "Puls_1" /*Nombre del dispositivo BLE que se mostrara al escanear*/
 
 #endif // COMMON_H
