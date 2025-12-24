@@ -46,16 +46,16 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
 static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                             struct ble_gatt_access_ctxt *ctxt, void *arg) {
     
-    accel_data_t data;
+    accel_raw_t single_data;
     int rc;
 
     // Si el móvil intenta LEER (Read Request)
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         if (attr_handle == accel_chr_val_handle) { /* Se mira si se piden los datos del acelerometro */
-            /* Obtenemos el dato mock */
-            data = accel_get_data();
+            /* Devolvemos solo la ultima muestra */
+            single_data = accel_get_last_sample();
             /* Se mete el dato dentro de "ble_gatt_access_ctxt" */
-            rc = os_mbuf_append(ctxt->om, &data, sizeof(data));
+            rc = os_mbuf_append(ctxt->om, &single_data, sizeof(single_data));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES; /* Error si hay fallo en empaquetado */
         }
     }
@@ -64,29 +64,28 @@ static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* Funcion para enviar datos activamente */
-void send_accel_notification(void) {
+/* Función de envío de Bloques */
+void send_accel_batch(void) {
 
-    accel_data_t data;
+    accel_packet_t *batch;
     struct os_mbuf *om;
-    int rc;
 
-    /* Verificamos que el cliente esta suscrito y hay una conexion valida */
     if (accel_notify_status && accel_chr_conn_handle_inited) {
-        /* Lectura del dato para hacer una copia */
-        data = accel_get_data();
+        
+        /* Obtenemos el paquete lleno */
+        batch = accel_get_batch();
 
-        /* Empaquetamos el dato en un 'mbuf' de NimBLE */
-        /*ble_hs_mbuf_from_flat convierte los datos crudos en el formato adecuado para NimBLE*/
-        om = ble_hs_mbuf_from_flat(&data, sizeof(data));
+        /* Empaquetamos en formato NimBLE */
+        om = ble_hs_mbuf_from_flat(batch, sizeof(accel_packet_t));
 
-        /* Se envia la notificacion */
-        rc = ble_gatts_notify_custom(accel_chr_conn_handle, accel_chr_val_handle, om);
-        if (rc == 0) {
-            ESP_LOGI("GATTsvc", "Notificacion enviada: X=%d Y=%d Z=%d", data.x, data.y, data.z);
-        } else {
-            ESP_LOGE("GATTsvc", "ERROR al notificar. ERROR code: %d", rc);
+        /* Enviamos */
+        int rc = ble_gatts_notify_custom(accel_chr_conn_handle, accel_chr_val_handle, om);
+        if (rc != 0) {
+            ESP_LOGW("GATT", "Error enviando batch. ERROR code: %d", rc);
         }
+    } else {
+        /* Si no hay nadie escuchando, vaciamos el buffer igual */
+        accel_get_batch();
     }
 }
 
@@ -97,6 +96,12 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
         accel_chr_conn_handle = event->subscribe.conn_handle; /*Destinatario*/
         accel_chr_conn_handle_inited = true; /*Indicador de conexion inicializada*/
         accel_notify_status = event->subscribe.cur_notify; /*Estado de la suscripcion*/
+
+        /* Si se acaban de activar las notificaciones se resetean los contadores */
+        if (event->subscribe.cur_notify > 0) {
+            ESP_LOGI("GATT", "Suscripción activada -> RESETEANDO RELOJ Y CONTADORES");
+            accel_reset_counters(); 
+        }
     }
 }
 

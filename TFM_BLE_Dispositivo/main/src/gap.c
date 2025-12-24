@@ -16,7 +16,6 @@ static uint8_t addr_val[6] = {0}; /* Dirección del dispositivo */
 static void start_advertising(void) { 
 
     int rc = 0; /*Código de retorno para funciones*/
-    const char *name; /*Nombre del dispositivo*/
     struct ble_hs_adv_fields adv_fields = {0}; /*Paquete de anuncio*/
     struct ble_gap_adv_params adv_params = {0}; /*Parametros de tiempos y modos*/
 
@@ -27,18 +26,13 @@ static void start_advertising(void) {
     adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
     /* Ponemos nombre al dispositivo */
-    name = ble_svc_gap_device_name(); /*Nombre definido en "common" mediante DEVICE_NAME*/
-    adv_fields.name = (uint8_t *)name; /*Puntero al nombre*/
-    adv_fields.name_len = strlen(name); /*Longitud del nombre*/
+    adv_fields.name = (uint8_t *)ble_svc_gap_device_name(); /*Nombre definido en "common" mediante DEVICE_NAME*/
+    adv_fields.name_len = strlen(ble_svc_gap_device_name()); /*Longitud del nombre*/
     adv_fields.name_is_complete = 1; /*Indica que el nombre es completo, no abreviatura*/
 
     /* Ponemos el icono de un "WRIST WORN" (estetico) */
     adv_fields.appearance = 0x03C0; 
     adv_fields.appearance_is_present = 1;
-
-    /* Anunciamos explicitamente que el dispositivo es un periférico (buena practica)*/
-    adv_fields.le_role = BLE_GAP_LE_ROLE_PERIPHERAL;
-    adv_fields.le_role_is_present = 1;
 
     /* Aplicamos la configuracion de los campos de anuncio */
     rc = ble_gap_adv_set_fields(&adv_fields);
@@ -85,16 +79,20 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
     
     int rc = 0; /*Código de retorno para funciones*/
     struct ble_gap_conn_desc desc; /*Descriptor de la conexión*/
+    struct ble_gap_upd_params params = {0}; /*Parametros de actualización de conexión*/
 
     /* Manejo de eventos */
     switch (event->type) {
         case BLE_GAP_EVENT_CONNECT: /* Evento de conexión */
             if (event->connect.status == 0) { /* Conexión exitosa */
-                rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
-                if (rc != 0) {
-                    ESP_LOGE("GAP","ERROR de conexion. ERROR code: %d", rc);
-                }
-                ESP_LOGI("GAP", "Evento de conexion");
+                /* Pedir modo rápido (7.5ms - 15ms) */
+                params.itvl_min = 6;  /* 7.5 ms */
+                params.itvl_max = 12; /* 15 ms */
+                params.latency = 0;
+                params.supervision_timeout = 100;
+
+                rc = ble_gap_update_params(event->connect.conn_handle, &params);
+                if (rc != 0) ESP_LOGW("GAP", "ERROR pidiendo modo rapido. ERROR code: %d", rc);
             }
             else { /* Conexión fallida */
             start_advertising(); /* Reiniciar anuncio */
@@ -106,12 +104,6 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
             start_advertising(); /* Reiniciar anuncio */
             break;
 
-        case BLE_GAP_EVENT_ADV_COMPLETE: /* Evento de anuncio completado */
-            /* No se usa en este caso pero se pone por buena practica*/
-            ESP_LOGI("GAP", "Evento de anuncio completado");
-            start_advertising();
-            break;
-
         case BLE_GAP_EVENT_SUBSCRIBE: /* Evento de suscripción */
             ESP_LOGI("GAP", "Evento de suscripcion");
             /*Poner "sensor_notify_enabled = true" mediante callback*/
@@ -119,12 +111,11 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
             break;
 
             case BLE_GAP_EVENT_CONN_UPDATE: /* Evento de actualizacion de parametros de conexion */
-            ESP_LOGI("GAP", "Evento de parametros de conexion actualizados (Event 3)");
+            ESP_LOGI("GAP", "Evento de parametros de conexion actualizados");
             break;
 
         case BLE_GAP_EVENT_CONN_UPDATE_REQ: /* Evento de peticion de actualizacion de parametros */
-            ESP_LOGI("GAP", "Evento de peticion de actualizacion de parametros recibida (Event 4)");
-            return 0; 
+            return 0; /* Aceptar siempre */
 
         case BLE_GAP_EVENT_REPEAT_PAIRING: /* Evento de re-emparejamiento */
             /* Si el móvil ya tenía claves antiguas, permitimos que intente emparejarse de nuevo */
@@ -138,11 +129,6 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 
         case BLE_GAP_EVENT_MTU: /* Evento de MTU actualizado */
             ESP_LOGI("GAP", "Evento de MTU actualizado a %d bytes", event->mtu.value);
-            break;
-
-        case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE: /* Evento 38 */
-            /* Se ha negociado la velocidad física (1M o 2M) */
-            ESP_LOGI("GAP", "Evento de velocidad fisica actualizada");
             break;
 
         default:

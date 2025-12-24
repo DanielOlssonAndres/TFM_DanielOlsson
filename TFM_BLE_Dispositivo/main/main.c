@@ -18,6 +18,8 @@ static void nimble_host_config_init(void) {
     ble_hs_cfg.sync_cb = on_stack_sync; /* Funcion que se ejecuta despues de arrancar NimBLE*/
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr; /* Gestion de memoria FLASH */
 
+    ble_att_set_preferred_mtu(256); /* Aceptamos paquetes de hasta 256 bytes */
+
     ble_store_config_init(); /* Leer configuraciones antiguas si las hay */
 }
 
@@ -33,9 +35,20 @@ static void nimble_host_task(void *param) {
 /* Leer sensor y generar los datos */
 static void accelerometer_task(void *param) {
 
+    /* Tiempo */
+    const TickType_t xFrequency = pdMS_TO_TICKS(1000 / ACCEL_SAMPLING_FREQ); /* 10ms */
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    
     while (1) {
-        send_accel_notification(); /* Enviar dato si hay alguien escuchando */
-        vTaskDelay(pdMS_TO_TICKS(1000)); /* "MANDAR 1 DATO CADA X ms" */
+
+        /* Tomamos una muestra y la metemos en el buffer */
+        accel_sample_and_store();
+        if (accel_is_batch_ready()) { /* Si el buffer se llena, lo enviamos */
+            send_accel_batch();
+        }
+
+        /* Esperar hasta el siguiente ciclo */
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 
     vTaskDelete(NULL); /* No deberia llegar aqui nunca (Buena practica) */
