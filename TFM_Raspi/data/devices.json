@@ -1,0 +1,9 @@
+{
+    "devices": [
+        {
+            "mac": "C8:C9:A3:CA:EE:7E",
+            "name": "Puls_1",
+            "alias": "PulseraTest"
+        }
+    ]
+}
