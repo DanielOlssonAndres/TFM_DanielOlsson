@@ -2,13 +2,13 @@
 #include "common.h"
 #include "esp_timer.h" // Para el reloj de alta precisión
 
-#include <stdlib.h>    // Para rand() (Mock data)
-
 static accel_packet_t acc_buffer; /* El paquete que estamos llenando */
 static accel_raw_t last_sample; /* Ultima muestra */
 static int sample_count = 0; /* Cuantas muestras llevamos en este paquete */
 static uint32_t global_packet_counter = 0; /* ID de secuencia */
 static int64_t start_time_offset = 0; /* Offset de tiempo al iniciar */
+
+static int16_t test_data_counter = 1; /*TEST*/
 
 void accel_init(void) {
 
@@ -27,6 +27,8 @@ void accel_reset_counters(void) {
     /* Se marca el "Ahora" como el nuevo punto cero */
     start_time_offset = esp_timer_get_time();
     
+    test_data_counter = 1;
+
     ESP_LOGI("ACCEL", "Contadores y reloj reiniciados a 0");
 }
 
@@ -51,9 +53,11 @@ void accel_sample_and_store(void) {
 
     /* Leemos el sensor */
     /*...*/
-    x_val = (rand() % 2000) - 1000;
-    y_val = (rand() % 2000) - 1000;
-    z_val = (rand() % 2000) - 1000;
+
+    x_val = test_data_counter;
+    y_val = test_data_counter;
+    z_val = test_data_counter;
+    test_data_counter++;
 
     /* Guardamos en el array */
     acc_buffer.samples[sample_count].x = x_val;
