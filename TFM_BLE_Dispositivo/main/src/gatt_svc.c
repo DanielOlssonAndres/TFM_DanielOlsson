@@ -27,8 +27,8 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
             {
                 .uuid = &accel_chr_uuid.u, /*UUID del dato*/
                 .access_cb = accel_chr_access, /*Callback de acceso a la característica*/
-                /*(Permisos). READ: Se puede preguntar puntualmente por los valores. NOTIFY: Envio de datos proactivamente*/
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY, 
+                /*(Permisos). ENCRIPTADO. NOTIFY: Envio de datos proactivamente*/
+                .flags = BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &accel_chr_val_handle /*Identificador de la caracteristica de acelerometro*/
             },
             {

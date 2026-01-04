@@ -1,7 +1,12 @@
-/* Includes */
 #include "gap.h"
 #include "common.h"
 #include "gatt_svc.h"
+#include "host/ble_hs.h"
+#include "host/util/util.h"
+#include "nimble/ble.h"
+#include "nimble/hci_common.h"
+#include "host/ble_store.h"
+#include "host/ble_gap.h"
 
 /* Declaraciones de las funciones */
 static int gap_event_handler(struct ble_gap_event *event, void *arg);
@@ -10,7 +15,37 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg);
 static uint8_t own_addr_type; /* Tipo de dirección del dispositivo */
 static uint8_t addr_val[6] = {0}; /* Dirección del dispositivo */
 
-/* Definiciones de las funciones */
+/* VARIABLES Y FUNCIONES PARA GESTIONAR LA WHITELIST */
+#define MAX_BONDS 8
+static ble_addr_t bonded_addrs[MAX_BONDS];
+static int bonded_addrs_count = 0;
+
+/* Callback auxiliar: se ejecuta por cada dispositivo guardado en memoria */
+static int collect_bonded_cb(int obj_type, union ble_store_value *val, void *arg) {
+    if (bonded_addrs_count < MAX_BONDS) {
+        /* Copiamos la dirección del dispositivo guardado a nuestro array */
+        bonded_addrs[bonded_addrs_count] = val->sec.peer_addr;
+        bonded_addrs_count++;
+    }
+    return 0;
+}
+
+/* Función que carga la Whitelist manualmente */
+static void load_whitelist_from_bonds(void) {
+    bonded_addrs_count = 0;
+    /* Iteramos sobre todos los secretos (claves) de peers guardados */
+    ble_store_iterate(BLE_STORE_OBJ_TYPE_PEER_SEC, collect_bonded_cb, NULL);
+    
+    if (bonded_addrs_count > 0) {
+        /* Enviamos la lista al controlador Bluetooth */
+        int rc = ble_gap_wl_set(bonded_addrs, bonded_addrs_count);
+        if (rc == 0) {
+            ESP_LOGI("GAP", "Whitelist cargada con %d dispositivos.", bonded_addrs_count);
+        } else {
+            ESP_LOGE("GAP", "Error cargando Whitelist: %d", rc);
+        }
+    }
+}
 
 /*El dispositivo anuncia su existencia al mundo*/
 static void start_advertising(void) { 
@@ -18,6 +53,7 @@ static void start_advertising(void) {
     int rc = 0; /*Código de retorno para funciones*/
     struct ble_hs_adv_fields adv_fields = {0}; /*Paquete de anuncio*/
     struct ble_gap_adv_params adv_params = {0}; /*Parametros de tiempos y modos*/
+    int num_bonds = 0; /*Número de dispositivos emparejados*/
 
     /* INICIO CONFIGURACION DE "adv_fields" ----------------------------------------- */
 
@@ -43,13 +79,30 @@ static void start_advertising(void) {
 
     /* FIN CONFIGURACION DE "adv_fields" -------------------------------------------- */
 
+    /* LÓGICA DE WHITELISTING */
+    ble_store_util_count(BLE_STORE_OBJ_TYPE_PEER_SEC, &num_bonds);
+
+    if (num_bonds > 0) {        
+        /* Cargamos los dispositivos vinculados en la Whitelist del controlador BLE */
+        load_whitelist_from_bonds();
+        
+        /* Configuramos el anuncio para usar la Whitelist */
+        adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+        adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+        
+        /* Filtramos para que SOLO los de la lista blanca puedan escanear o conectar */
+        adv_params.filter_policy = BLE_HCI_ADV_FILT_BOTH;
+        
+    } else {
+        
+        /* Modo abierto a todo el mundo */
+        adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+        adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+        /* Sin filtro */
+        adv_params.filter_policy = BLE_HCI_ADV_FILT_NONE;
+    }
+
     /* INICIO CONFIGURACION DE "adv_params" ----------------------------------------- */
-
-    /* Undirected: Acepta conexiones (suscripciones) de cualquier dispositivo */
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
-
-    /* General discoverable: Siempre es visible */
-    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
     /* Se manda el anuncio cada 500-510 ms (para evitar colisiones) */
     adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(500);
