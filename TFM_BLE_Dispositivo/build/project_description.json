@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "Prueba_BLE",
-    "project_version":    "f9d4f86-dirty",
+    "project_version":    "3ebb365-dirty",
     "project_path":       "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo",
     "idf_path":           "C:/Users/olsso/esp/v5.5.1/esp-idf",
     "build_dir":          "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build",
@@ -625,7 +625,7 @@
             "managed_reqs": [],
             "managed_priv_reqs": [ "espressif__led_strip" ],
             "file": "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/main/libmain.a",
-            "sources": [ "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/main/main.c", "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/main/src/accel.c", "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/main/src/gap.c", "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/main/src/gatt_svc.c", "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/main/src/user_input.c" ],
+            "sources": [ "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/main/main.c", "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/main/src/accel.c", "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/main/src/gap.c", "C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/main/src/gatt_svc.c" ],
             "include_dirs": [ "./include" ]
         },
         "mbedtls": {
