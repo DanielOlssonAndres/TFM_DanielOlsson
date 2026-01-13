@@ -1,119 +1,103 @@
 import asyncio
 import signal
 import sys
-from modules.device_registry import DeviceRegistry
 from modules.ble_manager import BLEManager
 
-# Flag para controlar el bucle principal
-running = True
+# Variable global para detener la escucha
+stop_listening_event = asyncio.Event()
 
-# Función para detectar Ctrl+C y parar el sistema ordenadamente
-def handle_exit(sig, frame):
-    global running
-    print("\n[SISTEMA] Solicitando parada... Espere a que se cierren conexiones.")
-    running = False
+async def main():
+    ble = BLEManager()
 
-# Menu interactivo para registrar nuevos dispositivos
-async def registration_menu(ble, registry):
+    def handle_exit_signal():
+        print("\n[!] Interrupción detectada. Saliendo...")
+        sys.exit(0)
+
+    # Menu principal
     while True:
-        print("\n" + "="*30)
-        print("      MENU DE REGISTRO")
-        print("="*30)
-        print("1. Buscar nuevos dispositivos")
-        print("2. Ver dispositivos registrados")
-        print("3. Volver al modo normal (RUN)")
+        # Mostramos lista de conectados
+        devs = ble.connected_devices
+        print("\n" + "="*40)
+        print(f"   Dispositivos Enlazados: {len(devs)}")
+        print("="*40)
         
-        # Usamos to_thread para no bloquear el bucle asíncrono mientras esperamos al usuario
-        opt = await asyncio.to_thread(input, ">> Seleccione opción: ")
+        if not devs:
+            print(" (Ningún dispositivo enlazado)")
+        else:
+            for mac, info in devs.items():
+                print(f" * {info['alias']} [{mac}]")
+        
+        print("-" * 40)
+        print("1. Registrar un nuevo dispositivo")
+        print("2. Comenzar la recepción de datos")
+        print("3. Salir (Ctrl+C)")
+        
+        choice = await asyncio.to_thread(input, "\n>> Seleccione opción: ")
 
-        if opt == "1":
-            candidates = await ble.scan_new_devices()
-            if not candidates:
-                print(">> No se encontraron dispositivos nuevos cercanos.")
+        if choice == "1":
+            # --- OPCIÓN 1: REGISTRO ---
+            print("\nBuscando dispositivos cercanos...")
+            candidates = await ble.scan_available()
+            
+            valid_candidates = []
+            for d in candidates:
+                # Que tenga nombre y no esté ya conectado
+                if d.name and d.address not in ble.connected_devices:
+                    valid_candidates.append(d)
+
+            if not valid_candidates:
+                print(">> No se encontraron dispositivos nuevos.")
+                continue
+
+            print("\n--- Dispositivos Disponibles ---")
+            for i, d in enumerate(valid_candidates):
+                print(f"[{i}] {d.name} ({d.address})")
+            
+            sel = await asyncio.to_thread(input, ">> Nº disp. (o 'BACK' para volver): ")
+            if sel.strip().upper() == "BACK":
                 continue
             
-            print("\n--- Candidatos encontrados ---")
-            for i, dev in enumerate(candidates):
-                print(f"[{i}] {dev.name} | MAC: {dev.address}")
-            
             try:
-                sel = await asyncio.to_thread(input, ">> Seleccione número a vincular (o 'c' cancelar): ")
-                if sel.lower() == 'c': continue
-                
                 idx = int(sel)
-                # Validamos que el índice exista
-                if idx < 0 or idx >= len(candidates):
-                    print(">> Número fuera de rango.")
-                    continue
-
-                target = candidates[idx]
-                alias = await asyncio.to_thread(input, f">> Asigne un nombre a {target.name}: ")
-                
-                # Llamada al proceso de emparejamiento
-                await ble.pair_and_register(target, alias)
-                
+                if 0 <= idx < len(valid_candidates):
+                    target = valid_candidates[idx]
+                    alias = await asyncio.to_thread(input, f">> Nombre para '{target.name}': ")
+                    
+                    # Proceso de conexión
+                    await ble.connect_and_register(target, alias)
+                else:
+                    print(">> Número inválido.")
             except ValueError:
-                print(">> Entrada no válida (debe ser un número).")
+                print(">> Entrada inválida.")
 
-        elif opt == "2":
-            # Mostramos lo que ya tenemos en la base de datos
-            devs = registry.get_all_devices()
-            print("\n--- Dispositivos Registrados ---")
-            for d in devs:
-                print(f"* Alias: {d['alias']} | MAC: {d['mac']}")
+        elif choice == "2":
+            # --- OPCIÓN 2: RECEPCIÓN ---
+            if not ble.connected_devices:
+                print(">> Error: No hay dispositivos registrados.")
+                await asyncio.sleep(1)
+                continue
 
-        elif opt == "3":
+            print("\n>> INICIANDO RECEPCIÓN DE DATOS")
+            print(">> Pulse ENTER para detener y volver al menú.\n")
+            
+            # Inicio notificaciones
+            await ble.start_listening()
+            
+            # Esperamos a que el usuario pulse Enter 
+            await asyncio.to_thread(input)
+            
+            print(">> Deteniendo...")
+            await ble.stop_listening()
+
+        elif choice == "3":
             break
         
         else:
-            print("Opción no reconocida.")
+            print("Opción no válida.")
 
-# Función principal MAIN
-async def main():
-    global running
-    
-    # Capturar Ctrl+C
-    signal.signal(signal.SIGINT, handle_exit)
-    signal.signal(signal.SIGTERM, handle_exit)
-
-    print("--- INICIANDO SISTEMA TFM ---")
-    
-    # Inicializamos módulos
-    registry = DeviceRegistry()
-    ble = BLEManager(registry)
-
-    print("Pulse ENTER en 3 segundos para ir al MENU DE REGISTRO...")
-    print("(Si no pulsa nada, el sistema arrancará automáticamente)")
-
-    try:
-        # Esperamos input con timeout de 3 segundos
-        await asyncio.wait_for(asyncio.to_thread(input), timeout=3.0)
-        # Si el usuario pulsa enter a tiempo, entramos al menú
-        await registration_menu(ble, registry)
-    except asyncio.TimeoutError:
-        print("\nTiempo agotado. Iniciando modo normal...")
-
-    print("\nSistema activo. Monitorizando sensores...")
-    
-    # Bucle principal
-    try:
-        while running:
-            # Intentamos conectar a los dispositivos conocidos
-            await ble.connect_known_devices()
-            
-            # Dormimos un poco para no saturar la CPU y permitir re-escaneos periódicos
-            # Usamos un bucle pequeño de sleep para responder rápido al Ctrl+C
-            for _ in range(50): # 5 segundos (50 * 0.1)
-                if not running: break
-                await asyncio.sleep(0.1)
-
-    except asyncio.CancelledError: 
-        print("Tarea principal cancelada")
-
-    finally:
-        print("Cerrando conexiones BLE...")
-        await ble.disconnect_all()
-        print("Programa terminado correctamente.")
+    # Salida limpia
+    await ble.disconnect_all()
+    print("Sistema apagado.")
 
 if __name__ == "__main__":
     try:

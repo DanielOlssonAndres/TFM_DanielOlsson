@@ -8,99 +8,106 @@ except ImportError:
     from data_handler import decode_packet
 
 # Constantes BLE de los dispositivos BLE
+UUID_SVC_ACCEL = "000000ff-0000-1000-8000-00805f9b34fb"
 UUID_CHAR_DATA = "0000ff01-0000-1000-8000-00805f9b34fb"
 
 class BLEManager:
     # Constructor de la clase
-    def __init__(self, registry):
-        self.registry = registry # Recibimos el registro como dependencia
-        self.active_clients = {} # Diccionario: { "MAC": BleakClient }
+    def __init__(self):
+        self.connected_devices = {}
 
-    # Función para escanear dispositivos NO registrados
-    async def scan_new_devices(self):
-        # Escaneo durante 5 segundos y guardamos todos los dispositivos encontrados 
-        devices = await BleakScanner.discover(timeout=5.0)
-        
-        candidates = []
-        for d in devices:
-            # Filtramos dispositivos que tengan nombre y NO estén ya registrados
-            if d.name and not self.registry.is_registered(d.address):
-                candidates.append(d)
-        return candidates
+    # Función para escanear dispositivos
+    async def scan_available(self):
+        print(">> Escaneando aire...")
+        devices = await BleakScanner.discover(timeout=4.0)
+        return devices
 
     # Función para emparejar y registrar un dispositivo BLE
-    async def pair_and_register(self, device, alias):
-        # Conecta, fuerza el emparejamiento y guarda en registro.
-        print(f"Conectando a {device.name} para emparejamiento...")
+    async def connect_and_register(self, device, alias):
+        print(f"Intentando conectar a {alias} ({device.address})...")
         
-        async with BleakClient(device.address) as client:
-            if client.is_connected:
-                try:
-                    # Intentamos suscribirnos. Si la característica es segura (Read Encrypted),
-                    # se iniciará el Pairing/Bonding automáticamente.
-                    await client.start_notify(UUID_CHAR_DATA, lambda s, d: None)
-                    
-                    # Si no da error, estamos emparejados.
-                    print("Emparejamiento exitoso")
-                    self.registry.save_device(device.address, device.name, alias)
-                    return True
-                except Exception as e:
-                    print(f"Error de seguridad/emparejamiento: {e}")
-                    return False
-        return False
-
-    # Función para conectarse a los dispositivos ya conocidos (los guardados en el registro)
-    async def connect_known_devices(self):
-        known_devs = self.registry.get_all_devices()
-        
-        if not known_devs:
-            return
-
-        # Escaneo rápido para ver cuáles están disponibles
-        found = await BleakScanner.discover(timeout=3.0)
-        found_map = {d.address: d for d in found}
-
-        for stored_dev in known_devs:
-            mac = stored_dev["mac"]
-            
-            # Si lo vemos cerca Y no estamos conectados ya
-            if mac in found_map and mac not in self.active_clients:
-                # Lanzamos conexión en segundo plano (no bloqueante)
-                asyncio.create_task(self._connect_single_device(mac, stored_dev["alias"]))
-
-    # Funcion interna para conectar un solo dispositivo
-    async def _connect_single_device(self, mac, alias):
-        print(f"[BLE] Intentando conectar a {alias}...")
-        client = BleakClient(mac)
+        client = BleakClient(device.address, disconnected_callback=self._on_disconnect)
         
         try:
-            # Intentamos conectar
             await client.connect()
+            # Verificación de compatibilidad 
+            has_service = False
+            for service in client.services:
+                if service.uuid == UUID_SVC_ACCEL: # Comprobamos UUID del servicio
+                    has_service = True
+                    break
             
-            if client.is_connected:
-                # Intentamos activar notificaciones (esto dispara la seguridad)
-                try:
-                    callback = lambda sender, data: self._handle_notification(alias, data)
-                    await client.start_notify(UUID_CHAR_DATA, callback)
-                    
-                    # Si llegamos aquí, todo bien
-                    self.active_clients[mac] = client
-                    print(f"[BLE] {alias} -> CONECTADO Y SEGURO")
-                    
-                except Exception as e_auth:
-                    # SI FALLA AQUÍ, es probable que las claves no coincidan
-                    print(f"[ALERTA] {alias} conectado pero FALLÓ LA SEGURIDAD.")
-                    print(f"[ALERTA] Es posible que el dispositivo se haya reseteado.")
-                    print(f"Detalle error: {e_auth}")
-                    
-                    # Desconectamos inmediatamente
-                    await client.disconnect()
-                    
-                    # Eliminar del registro automáticamente si las claves no valen
-                    self.registry.remove_device(mac) 
+            if not has_service:
+                print(">> ERROR: Dispositivo no compatible.")
+                await client.disconnect()
+                return False
+
+            # Si es compatible, intentamos emparejar 
+            try:
+                # Al leer o notificar una característica segura, salta el pairing
+                paired = await client.pair(protection_level=2) 
+                print(f">> Emparejamiento: {'Exitoso' if paired else 'Fallido/Ya existente'}")
+            except Exception as e:
+                print(f">> Nota sobre emparejamiento: {e}")
+
+            # Guardamos 
+            self.connected_devices[device.address] = {
+                "client": client,
+                "alias": alias,
+                "original_name": device.name
+            }
+            print(f">> {alias} registrado y conectado correctamente")
+            return True
 
         except Exception as e:
-            pass
+            print(f">> ERROR conectando: {e}")
+            return False
+
+    # Callback: Se ejecuta si el ESP32 se desconecta (Botón BLE pulsado o apagado)
+    def _on_disconnect(self, client):
+        mac = client.address
+        if mac in self.connected_devices:
+            alias = self.connected_devices[mac]['alias']
+            print(f"\n[ALERTA] {alias} ({mac}) se ha desconectado.")
+            print("[SISTEMA] Eliminando dispositivo de la lista activa...")
+            
+            # Eliminamos de la lista 
+            del self.connected_devices[mac]
+            # Evitamos que se guarden las claves antiguas
+            asyncio.create_task(client.unpair()) 
+
+    # Activar las notificaciones
+    async def start_listening(self):
+        if not self.connected_devices:
+            print(">> No hay dispositivos conectados.")
+            return
+
+        print("\n>> Activando sensores...")
+        for mac, info in self.connected_devices.items():
+            client = info["client"]
+            alias = info["alias"]
+            
+            if client.is_connected:
+                try:
+                    await client.start_notify(
+                        UUID_CHAR_DATA, 
+                        lambda s, d, a=alias: self._handle_notification(a, d)
+                    )
+                    print(f"   -> Escuchando a {alias}")
+                except Exception as e:
+                    print(f"   -> Error escuchando a {alias}: {e}")
+            else:
+                print(f"   -> {alias} no está conectado (Ignorado)")
+
+    # Parar las notificaciones
+    async def stop_listening(self):
+        for mac, info in self.connected_devices.items():
+            client = info["client"]
+            if client.is_connected:
+                try:
+                    await client.stop_notify(UUID_CHAR_DATA)
+                except:
+                    pass
 
     # Función interna para manejar notificaciones BLE 
     def _handle_notification(self, alias, data):
@@ -117,9 +124,20 @@ class BLEManager:
             # Imprimimos con el formato solicitado
             print(f"[{alias}] ID: {seq_id} | Time: {timestamp}ms | Dato[0]: {first_sample}")
 
+
     # Función para cerrar todas las conexiones BLE
     async def disconnect_all(self):
-        for mac, client in self.active_clients.items():
+        print(">> Cerrando conexiones...")
+        # Hacemos copia de las keys porque vamos a borrar del diccionario
+        macs = list(self.connected_devices.keys())
+        for mac in macs:
+            info = self.connected_devices[mac]
+            client = info["client"]
             if client.is_connected:
                 await client.disconnect()
-        print("Todas las conexiones cerradas.")
+
+            try:
+                await client.unpair()
+            except:
+                pass
+        self.connected_devices.clear()
