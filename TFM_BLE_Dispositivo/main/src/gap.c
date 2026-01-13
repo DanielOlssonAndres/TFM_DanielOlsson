@@ -16,6 +16,8 @@ static ble_addr_t locked_peer_addr; /* Dirección MAC del dispositivo conectado 
 
 /* --------------------------------- CÓDIGO PRIVADO --------------------------------------- */
 
+static void start_advertising(void);
+
 /* Funcion de callback cuando se produce un evento GAP */
 static int gap_event_handler(struct ble_gap_event *event, void *arg) {
     

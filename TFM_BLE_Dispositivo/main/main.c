@@ -73,13 +73,9 @@ void app_main(void) {
     accel_init(); /* Inicializar el acelerometro */
 
     /* Inicialización de NVS (Requerido por WiFi/Bluetooth drivers) */
-    ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        /* Si la partición NVS estaba corrupta o llena, la borramos y reintentamos */
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK(nvs_flash_erase()); /* Borramos todo para generar nuevas claves de seguridad */
+    ret = nvs_flash_init(); /* Inicialización */
+    ESP_ERROR_CHECK(ret); /* Check de posibles errores*/
 
     /* Inicializar pila NimBLE en RAM */
     ret = nimble_port_init();
