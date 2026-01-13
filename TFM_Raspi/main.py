@@ -3,15 +3,41 @@ import signal
 import sys
 from modules.ble_manager import BLEManager
 
-# Variable global para detener la escucha
-stop_listening_event = asyncio.Event()
+# Funciones auxiliares
+
+async def seleccionar_posicion():
+    
+    opciones_validas = {
+        "1": "Mano_Izquierda",
+        "2": "Mano_Derecha",
+        "3": "Tobillo_Izquierdo",
+        "4": "Tobillo_Derecho",
+        "5": "Cadera_Izquierda",
+        "6": "Cadera_Derecha"
+    }
+
+    while True:
+        print("\n--- Seleccione posición del dispositivo ---")
+        print("1. Mano Izquierda")
+        print("2. Mano Derecha")
+        print("3. Tobillo Izquierdo")
+        print("4. Tobillo Derecho")
+        print("5. Cadera Izquierda")
+        print("6. Cadera Derecha")
+        
+        eleccion = await asyncio.to_thread(input, "\nElija una opción: ")
+        eleccion = eleccion.strip()
+
+        if eleccion in opciones_validas:
+            alias = opciones_validas[eleccion]
+            print(f"Posición asignada: {alias}")
+            return alias 
+        else:
+            print(f"ERROR: '{eleccion}' no es válido. Debe elegir un número del 1 al 6.")
+
 
 async def main():
     ble = BLEManager()
-
-    def handle_exit_signal():
-        print("\n[!] Interrupción detectada. Saliendo...")
-        sys.exit(0)
 
     # Menu principal
     while True:
@@ -19,23 +45,23 @@ async def main():
         devs = ble.connected_devices
         print("\n" + "="*40)
         print(f"   Dispositivos Enlazados: {len(devs)}")
-        print("="*40)
-        
         if not devs:
             print(" (Ningún dispositivo enlazado)")
         else:
             for mac, info in devs.items():
                 print(f" * {info['alias']} [{mac}]")
-        
-        print("-" * 40)
+        print("="*40)
+
         print("1. Registrar un nuevo dispositivo")
         print("2. Comenzar la recepción de datos")
-        print("3. Salir (Ctrl+C)")
+        print("3. Finalizar programa")
         
         choice = await asyncio.to_thread(input, "\n>> Seleccione opción: ")
 
-        if choice == "1":
-            # --- OPCIÓN 1: REGISTRO ---
+        if choice.strip() == "":
+            # Si el usuario solo dio a Enter, se refresca el menú
+            continue
+        elif choice == "1": # Registrar nuevo dispositivo
             print("\nBuscando dispositivos cercanos...")
             candidates = await ble.scan_available()
             
@@ -61,7 +87,7 @@ async def main():
                 idx = int(sel)
                 if 0 <= idx < len(valid_candidates):
                     target = valid_candidates[idx]
-                    alias = await asyncio.to_thread(input, f">> Nombre para '{target.name}': ")
+                    alias = await seleccionar_posicion()
                     
                     # Proceso de conexión
                     await ble.connect_and_register(target, alias)
@@ -70,8 +96,7 @@ async def main():
             except ValueError:
                 print(">> Entrada inválida.")
 
-        elif choice == "2":
-            # --- OPCIÓN 2: RECEPCIÓN ---
+        elif choice == "2": # Iniciar recepción de datos
             if not ble.connected_devices:
                 print(">> Error: No hay dispositivos registrados.")
                 await asyncio.sleep(1)
@@ -86,10 +111,9 @@ async def main():
             # Esperamos a que el usuario pulse Enter 
             await asyncio.to_thread(input)
             
-            print(">> Deteniendo...")
             await ble.stop_listening()
 
-        elif choice == "3":
+        elif choice == "3": # Finalizar programa
             break
         
         else:
