@@ -15,8 +15,6 @@ void accel_init(void) {
     /* Inicializar offset con el tiempo actual por defecto */
     start_time_offset = esp_timer_get_time();
 
-    /*...*/
-
 }
 
 void accel_reset_counters(void) {
@@ -28,8 +26,6 @@ void accel_reset_counters(void) {
     start_time_offset = esp_timer_get_time();
     
     test_data_counter = 1;
-
-    ESP_LOGI("ACCEL", "Contadores y reloj reiniciados a 0");
 }
 
 void accel_sample_and_store(void) {

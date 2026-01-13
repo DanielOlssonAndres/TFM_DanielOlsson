@@ -2,23 +2,16 @@
 #include "common.h"
 #include "accel.h" 
 
-/* Declaracion de la funcion de acceso (callback) */
-static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
-                            struct ble_gatt_access_ctxt *ctxt, void *arg);
+static const ble_uuid16_t accel_svc_uuid = BLE_UUID16_INIT(0x00FF); /* UUID del servicio del acelerometro */
+static const ble_uuid16_t accel_chr_uuid = BLE_UUID16_INIT(0xFF01); /* UUID de la característica del acelerometro */
+static uint16_t accel_chr_val_handle; /* Identificador de la caracteristica de acelerometro */
+static uint16_t accel_chr_conn_handle = 0; /* Identificador del cliente (raspi) */
+static bool accel_chr_conn_handle_inited = false; /* Indica si "accel_chr_conn_handle" tiene un valor valido */
+static bool accel_notify_status = false; /* Indica si el cliente está suscrito */
 
-/* UUID del servicio del acelerometro */
-static const ble_uuid16_t accel_svc_uuid = BLE_UUID16_INIT(0x00FF);
-/* UUID de la característica del acelerometro */
-static const ble_uuid16_t accel_chr_uuid = BLE_UUID16_INIT(0xFF01);
+static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 
-/* Handles para saber donde escribir/notificar */
-static uint16_t accel_chr_val_handle; /*Identificador de la caracteristica de acelerometro*/
-static uint16_t accel_chr_conn_handle = 0; /*Identificador del cliente (raspi)*/
-static bool accel_chr_conn_handle_inited = false; /*Indica si "accel_chr_conn_handle" tiene un valor valido*/
-static bool accel_notify_status = false; /*Indica si el cliente está suscrito*/
-
-/* Tabla de servicios GATT */
-static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
+static const struct ble_gatt_svc_def gatt_svr_svcs[] = { /* Tabla de servicios GATT */
     {
         /* Servicio de Acelerómetro */
         .type = BLE_GATT_SVC_TYPE_PRIMARY, /*Servicio primario*/
@@ -41,7 +34,7 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     },
 };
 
-/* Callback de acceso a la característica */
+/* Callback de acceso único a la característica */
 /*Argumentos: Quien pregunta, que caracteristica pide, donde se devuelve el dato*/
 static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                             struct ble_gatt_access_ctxt *ctxt, void *arg) {
@@ -49,7 +42,7 @@ static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
     accel_raw_t single_data;
     int rc;
 
-    // Si el móvil intenta LEER (Read Request)
+    // Si se intenta LEER (Read Request)
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         if (attr_handle == accel_chr_val_handle) { /* Se mira si se piden los datos del acelerometro */
             /* Devolvemos solo la ultima muestra */
@@ -63,6 +56,8 @@ static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
     /* Si se intenta escribir, que no lo hemos habilitado, el if es falso y devolvemos error */
     return BLE_ATT_ERR_UNLIKELY;
 }
+
+/* ----------------- FUNCIONES PÚBLICAS --------------------- */
 
 /* Función de envío de Bloques */
 void send_accel_batch(void) {
@@ -79,10 +74,8 @@ void send_accel_batch(void) {
         om = ble_hs_mbuf_from_flat(batch, sizeof(accel_packet_t));
 
         /* Enviamos */
-        int rc = ble_gatts_notify_custom(accel_chr_conn_handle, accel_chr_val_handle, om);
-        if (rc != 0) {
-            ESP_LOGW("GATT", "Error enviando batch. ERROR code: %d", rc);
-        }
+        ble_gatts_notify_custom(accel_chr_conn_handle, accel_chr_val_handle, om);
+
     } else {
         /* Si no hay nadie escuchando, vaciamos el buffer igual */
         accel_get_batch();
@@ -99,7 +92,6 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
 
         /* Si se acaban de activar las notificaciones se resetean los contadores */
         if (event->subscribe.cur_notify > 0) {
-            ESP_LOGI("GATT", "Suscripción activada -> RESETEANDO RELOJ Y CONTADORES");
             accel_reset_counters(); 
         }
     }

@@ -7,12 +7,13 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdint.h> /*Para gestion de los tipos de datos*/
+#include <stdint.h> 
 
 /* ESP APIs */
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
+#include "driver/gpio.h" 
 
 /* FreeRTOS APIs */
 #include <freertos/FreeRTOS.h>
@@ -26,7 +27,10 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 
-/* Defines */
-#define DEVICE_NAME "Puls_1" /*Nombre del dispositivo BLE que se mostrara al escanear*/
+/* --- FIX: Se añade este include para ble_store_config_init() --- */
+#include "host/ble_store.h" 
+
+/* --- CONFIGURACIÓN DEL DISPOSITIVO --- */
+#define DEVICE_NAME "Puls_1" 
 
 #endif // COMMON_H
