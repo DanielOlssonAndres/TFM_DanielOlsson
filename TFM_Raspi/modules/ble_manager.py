@@ -40,12 +40,15 @@ class BLEManager:
         # Decodificamos el paquete
         packet = decode_packet(data)
 
-        if packet:           
+        if packet:    
+            samples = packet['samples']       
             seq = packet['sequence_id']
             n_samples = len(packet['samples'])
             
             # Imprimimos resumen
             print(f"[{alias}] Paquete #{seq} recibido ({n_samples} muestras)")
+            for i, s in enumerate(samples[:5]):
+                print(f"   -> M{i}: X={s['x']:<6} Y={s['y']:<6} Z={s['z']:<6}")
 
             # LÓGICA PARA ALMACENAR/PROCESAR DATOS PENDIENTE AQUÍ
 
