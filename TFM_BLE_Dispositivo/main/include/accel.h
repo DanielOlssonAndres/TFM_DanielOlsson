@@ -4,8 +4,8 @@
 #include <stdint.h> /*Para gestion de los tipos de datos*/
 #include <stdbool.h>
 
-#define ACCEL_SAMPLING_FREQ 100 /* 100 Hz = 1 muestra cada 10ms */
-#define SAMPLES_PER_PACKET  35 /* Numero de muestras por paquete */
+#define ACCEL_SAMPLING_FREQ 50 /* 50 Hz = 1 muestra cada 20ms */
+#define SAMPLES_PER_PACKET  25 /* Numero de muestras por paquete */
 
 /* Estructura de una muestra (X, Y, Z) */
 typedef struct {

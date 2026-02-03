@@ -31,6 +31,6 @@
 #include "host/ble_store.h" 
 
 /* --- CONFIGURACIÓN DEL DISPOSITIVO --- */
-#define DEVICE_NAME "Puls_1" 
+#define DEVICE_NAME "D2526_P1" 
 
 #endif // COMMON_H

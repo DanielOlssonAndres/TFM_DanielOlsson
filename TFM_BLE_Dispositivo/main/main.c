@@ -45,7 +45,7 @@ static void nimble_host_task(void *param) {
 /* Leer sensor y generar los datos */
 static void accelerometer_task(void *param) {
 
-    const TickType_t xFrequency = pdMS_TO_TICKS(1000 / ACCEL_SAMPLING_FREQ); /* 10ms */
+    const TickType_t xFrequency = pdMS_TO_TICKS(1000 / ACCEL_SAMPLING_FREQ); /* 20ms */
     TickType_t xLastWakeTime;
     
     xLastWakeTime = xTaskGetTickCount();
