@@ -3,7 +3,14 @@
 #include "gatt_svc.h"
 #include "accel.h"
 
+bool is_single_link_mode = true;
+
 /* --------------------- FUNCIONES ---------------------------*/
+
+static bool read_mode_switch(void) {
+    /* Leer GPIO */
+    return 1; /* 1 = Modo single-link, 0 = Modo multi-link */
+}
 
 /* Callback que se produce cuando el hardware esta listo */
 static void on_stack_sync(void) {
@@ -20,18 +27,14 @@ static void nimble_host_config_init(void) {
 
     /* IO Capabilities: No tenemos pantalla ni teclado. Modo "Just Works" */
     ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
-
-    /* Habilitar Bonding: Guardar claves en la memoria flash (NVS) para recordar a la Raspi */
+    /* Sin Bonding */
     ble_hs_cfg.sm_bonding = 0;
-
     /* Habilitar Secure Connections */
     ble_hs_cfg.sm_sc = 1;
-
     /* Configuración MITM (Man in the Middle) desactivada para Just Works */
     ble_hs_cfg.sm_mitm = 0;
-
+    
     ble_att_set_preferred_mtu(256); /* Aceptamos paquetes de hasta 256 bytes */
-
 }
 
 /* --------------------- TAREAS FREERTOS ---------------------------*/
@@ -69,6 +72,16 @@ void app_main(void) {
 
     int rc;
     esp_err_t ret; /* Retrono para errores en ESP-IDF */
+
+    is_single_link_mode = read_mode_switch();
+
+    if (read_mode_switch() == 1) {
+        is_single_link_mode = true;
+        ESP_LOGI("MAIN", "MODO: SINGLE-LINK");
+    } else {
+        is_single_link_mode = false;
+        ESP_LOGI("MAIN", "MODO: MULTI-LINK");
+    }
 
     accel_init(); /* Inicializar el acelerometro */
 

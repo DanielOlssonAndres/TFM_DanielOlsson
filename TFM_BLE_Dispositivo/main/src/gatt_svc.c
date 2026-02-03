@@ -2,12 +2,16 @@
 #include "common.h"
 #include "accel.h" 
 
+#define MAX_CONN MAX_CONNECTIONS_OPEN_MODE
+
+/* Array para guardar quién está conectado */
+static uint16_t conn_handles[MAX_CONNECTIONS]; 
+static bool conn_slots[MAX_CONNECTIONS] = {0}; /* false = libre, true = ocupado */
+static int active_subscribers_count = 0;
+
 static const ble_uuid16_t accel_svc_uuid = BLE_UUID16_INIT(0x00FF); /* UUID del servicio del acelerometro */
 static const ble_uuid16_t accel_chr_uuid = BLE_UUID16_INIT(0xFF01); /* UUID de la característica del acelerometro */
 static uint16_t accel_chr_val_handle; /* Identificador de la caracteristica de acelerometro */
-static uint16_t accel_chr_conn_handle = 0; /* Identificador del cliente (raspi) */
-static bool accel_chr_conn_handle_inited = false; /* Indica si "accel_chr_conn_handle" tiene un valor valido */
-static bool accel_notify_status = false; /* Indica si el cliente está suscrito */
 
 static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 
@@ -33,6 +37,31 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = { /* Tabla de servicios G
         0, /*Fin de la lista de servicios*/
     },
 };
+
+/* Función para añadir suscripciones */
+static void add_subscriber(uint16_t conn_handle) {
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (!conn_slots[i]) { /* Buscamos hueco libre */
+            conn_handles[i] = conn_handle;
+            conn_slots[i] = true;
+            active_subscribers_count++;
+            return;
+        }
+    }
+}
+
+/* Función para quitar suscripciones */
+static void remove_subscriber(uint16_t conn_handle) {
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (conn_slots[i] && conn_handles[i] == conn_handle) {
+            conn_slots[i] = false; /* Liberamos el hueco */
+            if (active_subscribers_count > 0) {
+                active_subscribers_count--; 
+            }
+            return;
+        }
+    }
+}
 
 /* Callback de acceso único a la característica */
 /*Argumentos: Quien pregunta, que caracteristica pide, donde se devuelve el dato*/
@@ -61,38 +90,38 @@ static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
 
 /* Función de envío de Bloques */
 void send_accel_batch(void) {
-
     accel_packet_t *batch;
     struct os_mbuf *om;
 
-    if (accel_notify_status && accel_chr_conn_handle_inited) {
-        
-        /* Obtenemos el paquete lleno */
-        batch = accel_get_batch();
+    /* Si no hay nadie escuchando, vaciamos buffer y salimos */
+    if (active_subscribers_count == 0) {
+        accel_get_batch(); 
+        return;
+    }
+    
+    batch = accel_get_batch();
 
-        /* Empaquetamos en formato NimBLE */
-        om = ble_hs_mbuf_from_flat(batch, sizeof(accel_packet_t));
-
-        /* Enviamos */
-        ble_gatts_notify_custom(accel_chr_conn_handle, accel_chr_val_handle, om);
-
-    } else {
-        /* Si no hay nadie escuchando, vaciamos el buffer igual */
-        accel_get_batch();
+    /* Comprobar si hay alguien escuchando */
+    for (int i=0; i<MAX_CONNECTIONS; i++) {
+        if (conn_slots[i]) {
+            /* Crear un mbuf NUEVO para cada envío */
+            om = ble_hs_mbuf_from_flat(batch, sizeof(accel_packet_t));
+            ble_gatts_notify_custom(conn_handles[i], accel_chr_val_handle, om);
+            break;
+        }
     }
 }
 
 /* Callback de suscripcion (cuando se activa la suscripcion) */
 void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
-    /* Verificamos la caracteristica a la que se ha suscrito */
-    if (event->subscribe.attr_handle == accel_chr_val_handle) { /*Acelerometro*/
-        accel_chr_conn_handle = event->subscribe.conn_handle; /*Destinatario*/
-        accel_chr_conn_handle_inited = true; /*Indicador de conexion inicializada*/
-        accel_notify_status = event->subscribe.cur_notify; /*Estado de la suscripcion*/
-
-        /* Si se acaban de activar las notificaciones se resetean los contadores */
+    if (event->subscribe.attr_handle == accel_chr_val_handle) {
         if (event->subscribe.cur_notify > 0) {
-            accel_reset_counters(); 
+            if (active_subscribers_count == 0) {
+                accel_reset_counters();
+            }
+            add_subscriber(event->subscribe.conn_handle);
+        } else {
+            remove_subscriber(event->subscribe.conn_handle);
         }
     }
 }

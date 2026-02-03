@@ -32,5 +32,8 @@
 
 /* --- CONFIGURACIÓN DEL DISPOSITIVO --- */
 #define DEVICE_NAME "D2526_P1" 
+#define MAX_CONNECTIONS 4
+
+extern bool is_single_link_mode; /* true = solo 1 conexión, false = hasta 4 conexiones*/
 
 #endif // COMMON_H

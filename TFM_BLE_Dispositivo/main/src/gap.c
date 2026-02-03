@@ -9,10 +9,8 @@
 
 /* Variables globales */
 static uint8_t own_addr_type; /* Tipo de dirección del dispositivo */
-static bool session_locked = false; /* Flag para saber si ya estamos conectados a un dispositivo */  
-static uint16_t active_conn_handle = BLE_HS_CONN_HANDLE_NONE; /* Identificador de la conexión actual */
-static ble_addr_t locked_peer_addr; /* Dirección MAC del dispositivo conectado */
-
+//static bool session_locked = false; /* Flag para saber si ya estamos conectados a un dispositivo */  
+static int active_connections = 0;
 
 /* --------------------------------- CÓDIGO PRIVADO --------------------------------------- */
 
@@ -21,62 +19,73 @@ static void start_advertising(void);
 /* Funcion de callback cuando se produce un evento GAP */
 static int gap_event_handler(struct ble_gap_event *event, void *arg) {
     
-    int rc = 0;
-    struct ble_gap_conn_desc desc; /*Detalles de la conexión*/
-    struct ble_gap_upd_params params = {0}; /*Parametros de actualización de conexión*/
+    int rc;
+    struct ble_gap_conn_desc desc;
+    struct ble_gap_upd_params params = {0}; /* Variable para los parámetros de velocidad */
 
-    /* Manejo de eventos */
     switch (event->type) {
-        case BLE_GAP_EVENT_CONNECT: /* Evento de conexión */
-            if (event->connect.status == 0) { /* Conexión exitosa */
-                /* Se guarda el identificador de la conexión*/
-                active_conn_handle = event->connect.conn_handle; 
-                /* Buscamos los detalles de quien se ha conectado usando el Handle */
-                rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
-                if (rc == 0) {
-                    if (!session_locked) { /* Si es la primera conexión, guardamos la dirección */
-                    session_locked = true;
-                    locked_peer_addr = desc.peer_ota_addr; 
-                    }
-                }
+        
+        case BLE_GAP_EVENT_CONNECT:
+            if (event->connect.status == 0) {
+                active_connections++; 
                 
-                /* Pedir modo rápido para mayor velocidad de recepción de datos */
-                params.itvl_min = 6;  /* 7.5 ms */
-                params.itvl_max = 12; /* 15 ms */
+                /* Switch = 1 (Single). Switch = 0 (Multi) */
+                int limite = is_single_link_mode ? 1 : MAX_CONNECTIONS;
+
+                /* Si aún caben más, seguimos anunciando */
+                if (active_connections < limite) {
+                    start_advertising(); 
+                }
+                /* Si llegamos al límite, no hacemos nada y el anuncio se detiene solo */
+
+                /* Petición de modo rápido */
+                /* Solicitamos bajar la latencia para enviar datos fluidos */
+                params.itvl_min = 6;  /* 7.5 ms (6 * 1.25) */
+                params.itvl_max = 12; /* 15 ms  (12 * 1.25) */
                 params.latency = 0;
                 params.supervision_timeout = 100;
+                
                 rc = ble_gap_update_params(event->connect.conn_handle, &params);
-            }
-            else { /* Conexión fallida */
-                start_advertising(); /* Reiniciar anuncio */
+                if (rc != 0) {
+                     ESP_LOGE("GAP", "Fallo al actualizar params: %d", rc);
+                }
+
+            } else {
+                /* Conexión fallida: reintentar anuncio */
+                start_advertising(); 
             }
             break;
 
-        case BLE_GAP_EVENT_DISCONNECT: /* Evento de desconexión */
-            /* Eliminamos los datos de la conexión anterior */
-            active_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        case BLE_GAP_EVENT_DISCONNECT:
+            /* Gestión de desconexión */
+            active_connections--;
+            if (active_connections < 0) active_connections = 0;
+            /* Siempre volvemos a anunciar al salir alguien para rellenar el hueco */
             start_advertising(); 
             break;
 
-        case BLE_GAP_EVENT_SUBSCRIBE: /* Evento de suscripción */
+        case BLE_GAP_EVENT_SUBSCRIBE:
+            /* Delegamos al servicio GATT la gestión de la suscripción */
             gatt_svr_subscribe_cb(event);
             break;
 
-        case BLE_GAP_EVENT_CONN_UPDATE_REQ: /* Evento de peticion de actualizacion de parametros */
-            return 0; /* Aceptar siempre */
+        case BLE_GAP_EVENT_CONN_UPDATE_REQ:
+            /* Aceptar siempre peticiones de actualización de la Raspi */
+            return 0; 
 
-        case BLE_GAP_EVENT_REPEAT_PAIRING: /* Raro que pase, pero por seguridad */
-            if (ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc) != 0) {
+        case BLE_GAP_EVENT_REPEAT_PAIRING:
+            /* Gestión estándar de re-emparejamiento */
+            rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
+            if (rc != 0) {
                 return BLE_GAP_REPEAT_PAIRING_IGNORE;
             }
             return BLE_GAP_REPEAT_PAIRING_RETRY;
 
         default:
-            return 0;
             break;
     }
 
-    return rc;
+    return 0;
 }
 
 /*El dispositivo anuncia su existencia al mundo*/
@@ -91,16 +100,11 @@ static void start_advertising(void) {
     adv_fields.name = (uint8_t *)ble_svc_gap_device_name(); 
     adv_fields.name_len = strlen(ble_svc_gap_device_name()); 
     adv_fields.name_is_complete = 1; 
+    adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
     /* Icono (Wrist Worn) */
     adv_fields.appearance = 0x03C0; 
     adv_fields.appearance_is_present = 1;
-
-    if (session_locked) { /* En caso de ya estar conectados a un dispositivo */
-        adv_fields.flags = BLE_HS_ADV_F_BREDR_UNSUP; /* No somos descubribles y usamos BLE */
-    } else { /* En caso de estar libres */
-        adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP; /* Descubrible con BLE */
-    }
 
     /* Aplicamos los campos */
     ble_gap_adv_set_fields(&adv_fields);
@@ -108,26 +112,14 @@ static void start_advertising(void) {
 
     /* ---- CONFIGURACIÓN DE PARÁMETROS Y WHITELIST ---- */
 
-    if (session_locked) { /* En caso de ya estar conectados a un dispositivo */ 
-        /* Solo permitimos entrar a la Raspi que se conectó antes */
-        /* Cargamos la dirección guardada en RAM en la Whitelist del hardware */
-        ble_gap_wl_set(&locked_peer_addr, 1);
-        
-        adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
-        adv_params.disc_mode = BLE_GAP_DISC_MODE_NON; /* Invisible (Non-discoverable) */
-        
-        /* Política de filtro: Escaneos y Conexiones solo de la Whitelist */
-        adv_params.filter_policy = BLE_HCI_ADV_FILT_BOTH; 
-        
-    } else { /* En caso de estar libres */        
-        adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
-        adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN; /* Visible (General) */
-        adv_params.filter_policy = BLE_HCI_ADV_FILT_NONE; /* Sin filtros */
-    }
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
     /* Cada cuánto se realiza el anuncio */
     adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(500);
     adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(510);
+
+    adv_params.filter_policy = BLE_HCI_ADV_FILT_NONE;
 
     /* Arrancar anuncio */
     ble_gap_adv_start(
