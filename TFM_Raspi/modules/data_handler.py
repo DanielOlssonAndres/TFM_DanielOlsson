@@ -1,7 +1,7 @@
 import struct # Para desempaquetar datos binarios
 
 # Constante de los dispositivos ESP32. Número de muestras por paquete
-SAMPLES_PER_PACKET = 35
+SAMPLES_PER_PACKET = 25
 
 # Función para decodificar un paquete de datos binarios recibido por BLE
 def decode_packet(data):

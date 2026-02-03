@@ -67,12 +67,12 @@ async def main():
             
             valid_candidates = []
             for d in candidates:
-                # Que tenga nombre y no esté ya conectado
-                if d.name and d.address not in ble.connected_devices:
+                # Que tenga nombre y este sea correcto, que tenga direccion y que no este ya conectado 
+                if d.name and d.name.startswith("D2526") and d.address not in ble.connected_devices:
                     valid_candidates.append(d)
 
             if not valid_candidates:
-                print(">> No se encontraron dispositivos nuevos.")
+                print(">> No se encontraron dispositivos 'D2526' nuevos.")
                 continue
 
             print("\n--- Dispositivos Disponibles ---")
