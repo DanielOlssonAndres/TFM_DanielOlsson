@@ -54,7 +54,8 @@ async def main():
 
         print("1. Registrar un nuevo dispositivo")
         print("2. Comenzar la recepción de datos")
-        print("3. Finalizar programa")
+        print("3. Desconectar dispositivo")
+        print("4. Finalizar programa")
         
         choice = await asyncio.to_thread(input, "\n>> Seleccione opción: ")
 
@@ -113,7 +114,38 @@ async def main():
             
             await ble.stop_listening()
 
-        elif choice == "3": # Finalizar programa
+        elif choice == "3": # Desconectar dispositivo 
+            if not ble.connected_devices:
+                print(">> No hay dispositivos conectados para eliminar.")
+                await asyncio.sleep(1)
+                continue
+
+            print("\n--- Seleccione dispositivo a desconectar ---")
+            
+            # Convertimos las claves (MACs) a una lista para poder usar índices
+            mac_list = list(ble.connected_devices.keys())
+            
+            for i, mac in enumerate(mac_list):
+                alias = ble.connected_devices[mac]['alias']
+                print(f"[{i}] {alias} ({mac})")
+            
+            sel = await asyncio.to_thread(input, ">> Nº disp. (o 'BACK' para volver): ")
+            
+            if sel.strip().upper() == "BACK":
+                continue
+            
+            try:
+                idx = int(sel)
+                if 0 <= idx < len(mac_list):
+                    target_mac = mac_list[idx]
+                    await ble.disconnect_device(target_mac)
+                    await asyncio.sleep(1) 
+                else:
+                    print(">> Número inválido.")
+            except ValueError:
+                print(">> Entrada inválida. Introduzca el número del índice.")
+
+        elif choice == "4": # Finalizar programa
             break
         
         else:

@@ -86,6 +86,17 @@ class BLEManager:
             print(f"Error en conexión: {e}")
             return False
 
+    async def disconnect_device(self, address):
+        if address in self.connected_devices:
+            print(f"Desconectando {address}...")
+            client = self.connected_devices[address]['client']
+            # Al llamar a disconnect, Bleak disparará el callback _handle_disconnect
+            await client.disconnect()
+            return True
+        else:
+            print(f"ERROR: El dispositivo {address} no está en la lista de conectados.")
+            return False
+
     async def start_listening(self):        
         for mac, info in self.connected_devices.items():
             client = info['client']

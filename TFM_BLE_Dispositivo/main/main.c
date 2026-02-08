@@ -3,13 +3,28 @@
 #include "gatt_svc.h"
 #include "accel.h"
 
+#define MODE_SWITCH_GPIO GPIO_NUM_13
+
 bool is_single_link_mode = true;
 
 /* --------------------- FUNCIONES ---------------------------*/
 
+static void setup_switch(void) {
+    /* Reset del pin para limpiar cualquier config previa */
+    gpio_reset_pin(MODE_SWITCH_GPIO);
+    /* Config del pin como entrada */
+    gpio_set_direction(MODE_SWITCH_GPIO, GPIO_MODE_INPUT);
+    /* Se activa la resistencia PULL-UP interna */
+    gpio_set_pull_mode(MODE_SWITCH_GPIO, GPIO_PULLUP_ONLY);
+}
+
 static bool read_mode_switch(void) {
-    /* Leer GPIO */
-    return 1; /* 1 = Modo single-link, 0 = Modo multi-link */
+    int level;
+    
+    level = gpio_get_level(MODE_SWITCH_GPIO);
+    ESP_LOGI("SWITCH", "Estado del Switch (GPIO %d): %d", MODE_SWITCH_GPIO, level);
+
+    return (level == 1); /* 1 = Modo single-link, 0 = Modo multi-link */
 }
 
 /* Callback que se produce cuando el hardware esta listo */
@@ -73,13 +88,13 @@ void app_main(void) {
     int rc;
     esp_err_t ret; /* Retrono para errores en ESP-IDF */
 
+    setup_switch();
+
     is_single_link_mode = read_mode_switch();
 
-    if (read_mode_switch() == 1) {
-        is_single_link_mode = true;
+    if (is_single_link_mode) {
         ESP_LOGI("MAIN", "MODO: SINGLE-LINK");
     } else {
-        is_single_link_mode = false;
         ESP_LOGI("MAIN", "MODO: MULTI-LINK");
     }
 
