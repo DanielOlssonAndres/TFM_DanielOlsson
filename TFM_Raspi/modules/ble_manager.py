@@ -7,7 +7,7 @@ from modules.data_handler import decode_packet
 CHARACTERISTIC_UUID = "0000FF01-0000-1000-8000-00805F9B34FB"
 
 class BLEManager:
-    def __init__(self):
+    def __init__(self, data_callback=None):
         self.connected_devices = {}  # Diccionario: {mac: {client, alias, ...}}
         self.scanner = BleakScanner()
         self.data_callback = data_callback # Enlace con parte de IA
@@ -36,7 +36,7 @@ class BLEManager:
         print(">> (Presione Enter para actualizar el menú): ", end="", flush=True)
 
     # Callback para manejar notificaciones entrantes
-    def _notification_handler(self, alias, sender, data):
+    def _notification_handler(self, alias, mac, sender, data):
        
         # Decodificamos el paquete
         packet = decode_packet(data)
@@ -107,7 +107,7 @@ class BLEManager:
             if client.is_connected:
                 try:
                     # Inyectar el alias en el callback para saber de quién es.
-                    callback_con_alias = partial(self._notification_handler, alias)
+                    callback_con_alias = partial(self._notification_handler, alias, mac)
                     
                     await client.start_notify(CHARACTERISTIC_UUID, callback_con_alias)
                     

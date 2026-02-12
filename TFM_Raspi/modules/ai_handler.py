@@ -11,8 +11,8 @@ from modules.signal_buffer import SignalBuffer
 
 # --- CONSTANTES ---
 # Deben coincidir con las que usaste para entrenar el modelo
-WINDOW_SIZE = 150   # 3 segundos a 50Hz
-OVERLAP = 100       # 2 segundos de solapamiento
+WINDOW_SIZE = 200   # 3 segundos a 50Hz
+OVERLAP = 150       # 2 segundos de solapamiento
 MODELS_DIR = "models/"
 
 class AIManager:
@@ -34,7 +34,7 @@ class AIManager:
     def _load_model(self, model_name):
         """Carga la arquitectura .json y los pesos .h5"""
         json_path = os.path.join(MODELS_DIR, model_name + ".json")
-        weights_path = os.path.join(MODELS_DIR, model_name + ".h5")
+        weights_path = os.path.join(MODELS_DIR, model_name + ".weights.h5")
 
         # Verificación de existencia
         if not os.path.exists(json_path) or not os.path.exists(weights_path):
@@ -96,20 +96,15 @@ class AIManager:
     def _predict(self, mac, alias, buffer_obj):
         """Prepara el tensor y ejecuta la inferencia en el modelo Keras"""
         
-        # Obtenemos el tensor con la forma correcta para tu LSTM
-        # Internamente hace el reshape con order='F' (Fortran) necesario
+        # Obtenemos el tensor. Ahora tendrá forma (1, 200, 3) directamente.
         tensor = buffer_obj.get_tensor_for_lstm()
         
         if tensor is not None:
-            # Keras espera un batch de datos, no un solo ejemplo.
-            # Añadimos una dimensión extra al principio: (150, 3) -> (1, 150, 3)
-            input_tensor = np.expand_dims(tensor, axis=0)
+            # YA NO HACEMOS expand_dims AQUÍ porque get_tensor_for_lstm ya incluye la dimensión batch
             
             try:
-                # Ejecutamos la predicción
-                # verbose=0 evita que Keras imprima barras de progreso en la consola
-                prediction_dist = self.model.predict(input_tensor, verbose=0)
-                
+                # Ejecutamos la predicción pasando 'tensor' directamente
+                prediction_dist = self.model.predict(tensor, verbose=0)
                 # Interpretamos el resultado (One-Hot Encoding -> Clase)
                 winner_idx = np.argmax(prediction_dist, axis=1)[0]
                 

@@ -76,7 +76,7 @@ class SignalBuffer:
             tensor = tensor.flatten()
             
             # 3. Reshape con orden 'F' (Fortran-like index order), vital para tu modelo entrenado
-            tensor = np.reshape(tensor, newshape=(-1, self.window_size, 3), order='F')
+            tensor = np.reshape(tensor, (-1, self.window_size, 3), order='F')
             
             return tensor
         except Exception as e:
