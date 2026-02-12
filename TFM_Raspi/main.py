@@ -2,6 +2,10 @@ import asyncio
 import signal
 import sys
 from modules.ble_manager import BLEManager
+from modules.ai_handler import AIManager
+
+MODEL_NAME = "CIRCLES_SHAKE_TILT-LSTM_from_raw" # Nombre sin extensión en la carpeta "models"
+CLASSES = ["CIRCLES", "SHAKE", "TILT"] # Clases a identificar EN ORDEN
 
 # Funciones auxiliares
 
@@ -37,7 +41,9 @@ async def seleccionar_posicion():
 
 
 async def main():
-    ble = BLEManager()
+
+    ai_system = AIManager(MODEL_NAME, CLASSES)
+    ble = BLEManager(data_callback=ai_system.process_incoming_data)
 
     # Menu principal
     while True:
@@ -103,16 +109,21 @@ async def main():
                 await asyncio.sleep(1)
                 continue
 
-            print("\n>> INICIANDO RECEPCIÓN DE DATOS")
+            print("\n>> INICIANDO SISTEMA DE RECONOCIMIENTO")
             print(">> Pulse ENTER para detener y volver al menú.\n")
             
-            # Inicio notificaciones
+            # Activamos el flujo de datos Bluetooth
             await ble.start_listening()
             
-            # Esperamos a que el usuario pulse Enter 
+            # Activamos la IA 
+            ai_system.start_prediction()
+            
+            # Esperamos a que el usuario pulse Enter (Bloqueante hasta que pulse)
             await asyncio.to_thread(input)
             
-            await ble.stop_listening()
+            # Al pulsar Enter, apagamos todo en orden inverso
+            ai_system.stop_prediction() # La IA deja de procesar
+            await ble.stop_listening()  # El Bluetooth deja de enviar datos
 
         elif choice == "3": # Desconectar dispositivo 
             if not ble.connected_devices:

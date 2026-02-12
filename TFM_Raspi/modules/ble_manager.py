@@ -10,6 +10,7 @@ class BLEManager:
     def __init__(self):
         self.connected_devices = {}  # Diccionario: {mac: {client, alias, ...}}
         self.scanner = BleakScanner()
+        self.data_callback = data_callback # Enlace con parte de IA
 
     # Callback para manejar apagado/reset de dispositivos => Desconexiones
     def _handle_disconnect(self, client):
@@ -45,12 +46,13 @@ class BLEManager:
             seq = packet['sequence_id']
             n_samples = len(packet['samples'])
             
-            # Imprimimos resumen
-            print(f"[{alias}] Paquete #{seq} recibido ({n_samples} muestras)")
-            for i, s in enumerate(samples[:5]):
-                print(f"   -> M{i}: X={s['x']:<6} Y={s['y']:<6} Z={s['z']:<6}")
+            # Pasamos los datos a la IA
+            if self.data_callback:
+                self.data_callback(mac, alias, samples)
+            else:
+                # Si no hay IA conectada, solo imprimimos los datos raw (Modo Debug)
+                print(f"[{alias}] Dato recibido (sin procesar)")
 
-            # LÓGICA PARA ALMACENAR/PROCESAR DATOS PENDIENTE AQUÍ
 
         else:
             print(f"[{alias}] Error: Paquete corrupto o tamaño inválido.")
