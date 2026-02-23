@@ -1,8 +1,10 @@
 import os
 import sys
 import numpy as np
+import threading
 from tensorflow.keras.models import model_from_json
 from modules.signal_buffer import SignalBuffer
+import queue
 
 # Estas constantes deben coincidir con las usadas para entrenar el modelo
 WINDOW_SIZE = 200   # 3 segundos a 50Hz
@@ -14,8 +16,13 @@ class AIManager:
     def __init__(self, model_name, classes):
         self.classes = classes
         self.buffers = {}  
-        self.is_active = False # Estado del sistema
-        self.model = self._load_model(model_name) # Se carga el modelo al iniciar
+        self.is_active = False 
+        self.model = self._load_model(model_name)
+        
+        # Sistema de encolado seguro para IA
+        self.prediction_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._prediction_worker, daemon=True)
+        self.worker_thread.start()
 
     def _load_model(self, model_name):
         json_path = os.path.join(MODELS_DIR, model_name + ".json")
@@ -54,44 +61,40 @@ class AIManager:
         print(">> [IA] SISTEMA DETENIDO.")
 
     def process_incoming_data(self, mac, alias, samples):
-        # Si el interruptor está apagado, ignoramos los datos
         if not self.is_active:
             return
 
-        # Si es un dispositivo nuevo, le creamos su propio Buffer
         if mac not in self.buffers:
             self.buffers[mac] = SignalBuffer(WINDOW_SIZE, OVERLAP)
 
-        # Añadimos los datos al buffer de ese dispositivo
         buffer_obj = self.buffers[mac]
-        
-        # add_packet devuelve True si se ha completado un STEP (ventana lista)
         is_ready = buffer_obj.add_packet(samples)
 
-        # Si el buffer está listo, predecimos
         if is_ready:
-            self._predict(mac, alias, buffer_obj)
+            tensor = buffer_obj.get_tensor_for_lstm()
+            if tensor is not None:
+                self.prediction_queue.put((mac, alias, tensor))
 
-    def _predict(self, mac, alias, buffer_obj):        
-        # Obtenemos el tensor. Ahora tendrá forma (1, 200, 3) directamente.
-        tensor = buffer_obj.get_tensor_for_lstm()
-        
-        if tensor is not None:            
+    def _prediction_worker(self):
+        # Este hilo vive siempre en segundo plano procesando la cola uno por uno
+        while True:
+            item = self.prediction_queue.get()
+            if item is None:
+                break
+            
+            mac, alias, tensor = item
             try:
-                # Ejecutamos la predicción pasando 'tensor' directamente
                 prediction_dist = self.model.predict(tensor, verbose=0)
-                # Interpretamos el resultado 
                 winner_idx = np.argmax(prediction_dist, axis=1)[0]
                 
-                # Seguridad por si el índice sale de rango
                 if winner_idx < len(self.classes):
                     winner_label = self.classes[winner_idx]
                     confidence = prediction_dist[0][winner_idx] * 100
-                    
-                    # IMPRIMIMOS EL RESULTADO
                     print(f"[{alias}] PREDICCIÓN: {winner_label} ({confidence:.1f}%)")
                 else:
                     print(f"[{alias}] Error: Índice de clase {winner_idx} fuera de rango.")
                     
             except Exception as e:
                 print(f"[{alias}] Error en inferencia: {e}")
+            finally:
+                self.prediction_queue.task_done()

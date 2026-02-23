@@ -14,26 +14,34 @@ class BLEManager:
 
     # Callback para manejar apagado/reset de dispositivos => Desconexiones
     def _handle_disconnect(self, client):
-        
         mac = client.address
         alias = "Desconocido"
 
         if mac in self.connected_devices:
-            # Se guarda el alias antes de borrar
             alias = self.connected_devices[mac]['alias'] 
-            # Borramos del diccionario de memoria (actualiza el menú)
             del self.connected_devices[mac]
-        try:
-            subprocess.run(["bluetoothctl", "remove", mac], check=False, stdout=subprocess.DEVNULL)
-        except Exception as e:
-            print(f"Error borrando claves de sistema: {e}")
+
+        # Creamos una tarea en el event loop actual para no bloquear este callback
+        loop = asyncio.get_event_loop()
+        loop.create_task(self._remove_bluetooth_device_async(mac))
 
         # Mensaje al usuario
         print(f"\n" + "!"*50)
         print(f" [AVISO] {alias} ({mac}) se ha desconectado.")
-        print(f" El dispositivo ha sido eliminado del sistema.")
         print("!"*50 + "\n")
         print(">> (Presione Enter para actualizar el menú): ", end="", flush=True)
+
+    async def _remove_bluetooth_device_async(self, mac):
+        try:
+            # Ejecución no bloqueante en el sistema operativo
+            proc = await asyncio.create_subprocess_exec(
+                "bluetoothctl", "remove", mac,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await proc.communicate()
+        except Exception as e:
+            print(f"Error borrando claves de sistema en segundo plano: {e}")
 
     # Callback para manejar notificaciones entrantes
     def _notification_handler(self, alias, mac, sender, data):
