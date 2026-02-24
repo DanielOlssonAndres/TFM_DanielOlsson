@@ -1,13 +1,24 @@
 import asyncio
 import signal
 import sys
+import os
 from modules.ble_manager import BLEManager
 from modules.ai_handler import AIManager
 
-MODEL_NAME = "CIRCLES_SHAKE_TILT-LSTM_from_raw" # Nombre sin extensión en la carpeta "models"
-CLASSES = ["CIRCLES", "SHAKE", "TILT"] # Clases a identificar EN ORDEN
+DEVICE_PREFIXES = {
+    "Mano_Izquierda": "MI", "Mano_Derecha": "MD",
+    "Tobillo_Izquierdo": "TI", "Tobillo_Derecho": "TD",
+    "Cadera_Izquierda": "CI", "Cadera_Derecha": "CD"
+}
+
+ai_system = None # Variable global para instanciar la IA dinámicamente
 
 # Funciones auxiliares
+
+# Función para enviar los datos solo si la IA está iniciada
+def data_router(mac, alias, samples):
+    if ai_system and ai_system.is_active:
+        ai_system.process_incoming_data(mac, alias, samples)
 
 async def seleccionar_posicion():
     
@@ -42,8 +53,7 @@ async def seleccionar_posicion():
 
 async def main():
 
-    ai_system = AIManager(MODEL_NAME, CLASSES)
-    ble = BLEManager(data_callback=ai_system.process_incoming_data)
+    ble = BLEManager(data_callback=data_router)
 
     # Menu principal
     while True:
@@ -104,26 +114,76 @@ async def main():
                 print(">> Entrada inválida.")
 
         elif choice == "2": # Iniciar recepción de datos
-            if not ble.connected_devices:
-                print(">> Error: No hay dispositivos registrados.")
+            # Buscar modelos en la carpeta
+            modelos_disponibles = [f.replace('.json', '') for f in os.listdir("models") if f.endswith('.json')]
+            if not modelos_disponibles:
+                print(">> [ERROR] No hay modelos en la carpeta 'models'.")
                 await asyncio.sleep(1)
                 continue
-
-            print("\n>> INICIANDO SISTEMA DE RECONOCIMIENTO")
+                
+            print("\n--- Modelos Disponibles ---")
+            for i, mod in enumerate(modelos_disponibles):
+                print(f"[{i}] {mod}")
+                
+            sel_mod = await asyncio.to_thread(input, ">> Seleccione modelo (o 'BACK'): ")
+            if sel_mod.strip().upper() == "BACK": continue
+            
+            try:
+                modelo_elegido = modelos_disponibles[int(sel_mod)]
+            except (ValueError, IndexError):
+                print(">> Selección inválida.")
+                continue
+                
+            # Parsear el nombre: ej. MIMDTI_CoSa_1973783
+            partes = modelo_elegido.split('_')
+            if len(partes) < 2:
+                print(">> [ERROR] El modelo no sigue la nomenclatura Dispositivos_Actividades_X.")
+                continue
+                
+            # Extraer bloques de 2 letras
+            req_devs = [partes[0][i:i+2] for i in range(0, len(partes[0]), 2)]
+            req_acts = [partes[1][i:i+2] for i in range(0, len(partes[1]), 2)]
+            
+            # Validar dispositivos conectados
+            connected_aliases = [info['alias'] for info in ble.connected_devices.values()]
+            connected_prefixes = [DEVICE_PREFIXES.get(alias) for alias in connected_aliases]
+            
+            if sorted(req_devs) != sorted(connected_prefixes):
+                print("\n>> [ERROR] Los dispositivos conectados no coinciden con las necesidades del modelo.")
+                print(f"   El modelo requiere: {req_devs}")
+                print(f"   Usted ha conectado: {connected_prefixes}")
+                await asyncio.sleep(2)
+                continue
+                
+            # Solicitar nombres de actividades
+            print("\n--- Configuración de Actividades ---")
+            clases_finales = []
+            for act in req_acts:
+                nombre_act = await asyncio.to_thread(input, f"Actividad correspondiente con '{act}': ")
+                clases_finales.append(nombre_act.strip())
+                
+            # Ordenar las MACs según el modelo (Para que la red reciba los datos en orden)
+            mac_order = []
+            for req in req_devs:
+                for mac, info in ble.connected_devices.items():
+                    if DEVICE_PREFIXES.get(info['alias']) == req and mac not in mac_order:
+                        mac_order.append(mac)
+                        break
+                        
+            # Instanciar y arrancar IA
+            global ai_system
+            print(f"\n>> Cargando modelo '{modelo_elegido}' en memoria (esto puede tardar unos segundos)...")            
+            ai_system = await asyncio.to_thread(AIManager, modelo_elegido, clases_finales, mac_order)
+            
+            print("\n>> INICIANDO SISTEMA DE RECONOCIMIENTO MULTI-SENSOR")
             print(">> Pulse ENTER para detener y volver al menú.\n")
             
-            # Activamos el flujo de datos Bluetooth
             await ble.start_listening()
-            
-            # Activamos la IA 
             ai_system.start_prediction()
-            
-            # Esperamos a que el usuario pulse Enter (Bloqueante hasta que pulse)
             await asyncio.to_thread(input)
             
-            # Al pulsar Enter, apagamos todo en orden inverso
-            ai_system.stop_prediction() # La IA deja de procesar
-            await ble.stop_listening()  # El Bluetooth deja de enviar datos
+            ai_system.stop_prediction()
+            await ble.stop_listening()
 
         elif choice == "3": # Desconectar dispositivo 
             if not ble.connected_devices:
