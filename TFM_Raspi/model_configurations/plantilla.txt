@@ -1,0 +1,2 @@
+DEVICES: Mano_Izquierda, Volante_Coche
+CLASSES: Correr, Saltar, Reposo

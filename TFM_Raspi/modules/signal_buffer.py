@@ -1,7 +1,10 @@
 import numpy as np
 
+WINDOW_SIZE = 200   
+OVERLAP = 150 
+
 class SignalBuffer:
-    def __init__(self, window_size=150, overlap=100):
+    def __init__(self, window_size=WINDOW_SIZE, overlap=OVERLAP):
         self.window_size = window_size
         self.overlap = overlap
         self.step_size = window_size - overlap

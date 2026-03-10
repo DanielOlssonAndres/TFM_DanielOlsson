@@ -1,6 +1,8 @@
 import asyncio
 import os
 import sys
+import glob
+import pwd
 import multiprocessing as mp
 from modules.ble_manager import BLEManager
 from modules.data_recorder import DataRecorder
@@ -9,7 +11,8 @@ async def seleccionar_posicion():
     opciones_validas = {
         "1": "Mano_Izquierda", "2": "Mano_Derecha",
         "3": "Tobillo_Izquierdo", "4": "Tobillo_Derecho",
-        "5": "Cadera_Izquierda", "6": "Cadera_Derecha"
+        "5": "Cadera_Izquierda", "6": "Cadera_Derecha",
+        "7": "Personalizado"
     }
 
     while True:
@@ -17,14 +20,63 @@ async def seleccionar_posicion():
         for k, v in opciones_validas.items():
             print(f"{k}. {v.replace('_', ' ')}")
         
-        # Ejecutamos input en un hilo separado para no bloquear el BLE
         eleccion = await asyncio.to_thread(input, "\nElija una opción: ")
-        if eleccion.strip() in opciones_validas:
-            return opciones_validas[eleccion.strip()]
+        eleccion = eleccion.strip()
+
+        if eleccion in opciones_validas:
+            if eleccion == "7":
+                alias = await asyncio.to_thread(input, "Introduzca el alias personalizado: ")
+                # Reemplazamos espacios por barras bajas para mantener consistencia en los nombres
+                return alias.strip().replace(" ", "_")
+            return opciones_validas[eleccion]
+        
         print("ERROR: Opción no válida.")
 
 async def input_async(prompt):
     return await asyncio.to_thread(input, prompt)
+
+def configurar_entorno_grafico():
+    # Gestiona el enrutamiento de la interfaz gráfica.
+    # Si detecta SSH con X11 Forwarding, envía la GUI al PC.
+    # Si no hay X11 Forwarding pero hay HDMI, salta la seguridad local para mostrar la GUI en la Raspi.
+    
+    display_actual = os.environ.get('DISPLAY')
+
+    # Caso SSH -X o terminal local ya configurada
+    if display_actual:
+        return True
+
+    # Caso SSH sin -X. Comprobamos si hay HDMI físico
+    hdmi_conectado = False
+    for port in glob.glob('/sys/class/drm/card*-HDMI-*/status'):
+        try:
+            with open(port, 'r') as f:
+                if 'connected' in f.read():
+                    hdmi_conectado = True
+                    break
+        except Exception:
+            pass
+
+    if hdmi_conectado:
+        # Inyectar variables de entorno para saltar la protección de la sesión local
+        uid = os.getuid()
+        user_home = os.path.expanduser('~')
+        
+        # Parámetros básicos para la pantalla principal
+        os.environ['DISPLAY'] = ':0'
+        os.environ['WAYLAND_DISPLAY'] = 'wayland-0'
+        
+        # Parámetro de seguridad para X11
+        xauth_path = os.path.join(user_home, '.Xauthority')
+        if os.path.exists(xauth_path):
+            os.environ['XAUTHORITY'] = xauth_path
+            
+        # Parámetro de seguridad para Wayland 
+        os.environ['XDG_RUNTIME_DIR'] = f'/run/user/{uid}'
+        
+        return True
+
+    return False
 
 async def main():
     # Inicializamos el grabador de datos 
@@ -113,18 +165,14 @@ async def main():
                 modo = modo.strip()
                 
                 if modo == "1":
-                    # Comprobamos si hay un entorno gráfico activo en la Raspberry Pi
-                    tiene_pantalla = os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
-                    
-                    if not tiene_pantalla:
-                        print("\n>> [ERROR] Esta opción no está disponible. No se detecta una pantalla conectada")
-                        print(">> ni un entorno gráfico activo en la Raspberry Pi.")
+                    if not configurar_entorno_grafico():
+                        print("\n>> [ERROR] Esta opción no está disponible. No se detecta X11 Forwarding (ssh -X)")
+                        print(">> ni un monitor HDMI conectado físicamente a la Raspberry Pi.")
                         print(">> Por favor, elija la opción 2.")
-                        # Al hacer continue, el bucle vuelve a mostrar las opciones 1, 2 y 3
                         continue
                     else:
                         recorder.use_visualizer = True
-                        break # Salimos del submenú para continuar con la grabación
+                        break
                         
                 elif modo == "2":
                     recorder.use_visualizer = False
@@ -201,7 +249,7 @@ async def main():
                 recorder.stop_visualizers()
 
             # Volcamos todo lo que está en memoria (RAM) a los archivos físicos .csv
-            archivos_creados = recorder.save_data(gestures)
+            archivos_creados = recorder.save_data(gestures, ble.connected_devices)
             print("\n>> SECUENCIA FINALIZADA. Archivos guardados:")
             for f in archivos_creados:
                 print(f"   - {f}")

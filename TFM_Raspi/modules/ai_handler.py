@@ -7,8 +7,8 @@ from modules.signal_buffer import SignalBuffer
 import queue
 
 # Estas constantes deben coincidir con las usadas para entrenar el modelo
-WINDOW_SIZE = 200   # 3 segundos a 50Hz
-OVERLAP = 150       # 2 segundos de solapamiento
+WINDOW_SIZE = 200   
+OVERLAP = 150      
 
 MODELS_DIR = "models/"
 

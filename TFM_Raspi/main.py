@@ -5,12 +5,6 @@ import os
 from modules.ble_manager import BLEManager
 from modules.ai_handler import AIManager
 
-DEVICE_PREFIXES = {
-    "Mano_Izquierda": "MI", "Mano_Derecha": "MD",
-    "Tobillo_Izquierdo": "TI", "Tobillo_Derecho": "TD",
-    "Cadera_Izquierda": "CI", "Cadera_Derecha": "CD"
-}
-
 ai_system = None # Variable global para instanciar la IA dinámicamente
 
 # Funciones auxiliares
@@ -21,34 +15,29 @@ def data_router(mac, alias, samples):
         ai_system.process_incoming_data(mac, alias, samples)
 
 async def seleccionar_posicion():
-    
     opciones_validas = {
-        "1": "Mano_Izquierda",
-        "2": "Mano_Derecha",
-        "3": "Tobillo_Izquierdo",
-        "4": "Tobillo_Derecho",
-        "5": "Cadera_Izquierda",
-        "6": "Cadera_Derecha"
+        "1": "Mano_Izquierda", "2": "Mano_Derecha",
+        "3": "Tobillo_Izquierdo", "4": "Tobillo_Derecho",
+        "5": "Cadera_Izquierda", "6": "Cadera_Derecha",
+        "7": "Personalizado"
     }
 
     while True:
         print("\n--- Seleccione posición del dispositivo ---")
-        print("1. Mano Izquierda")
-        print("2. Mano Derecha")
-        print("3. Tobillo Izquierdo")
-        print("4. Tobillo Derecho")
-        print("5. Cadera Izquierda")
-        print("6. Cadera Derecha")
+        for k, v in opciones_validas.items():
+            print(f"{k}. {v.replace('_', ' ')}")
         
         eleccion = await asyncio.to_thread(input, "\nElija una opción: ")
         eleccion = eleccion.strip()
 
         if eleccion in opciones_validas:
-            alias = opciones_validas[eleccion]
-            print(f"Posición asignada: {alias}")
-            return alias 
-        else:
-            print(f"ERROR: '{eleccion}' no es válido. Debe elegir un número del 1 al 6.")
+            if eleccion == "7":
+                alias = await asyncio.to_thread(input, "Introduzca el alias personalizado: ")
+                # Reemplazamos espacios por barras bajas para mantener consistencia en los nombres
+                return alias.strip().replace(" ", "_")
+            return opciones_validas[eleccion]
+        
+        print("ERROR: Opción no válida.")
 
 
 async def main():
@@ -134,42 +123,55 @@ async def main():
                 print(">> Selección inválida.")
                 continue
                 
-            # Parsear el nombre: ej. MIMDTI_CoSa_1973783
-            partes = modelo_elegido.split('_')
-            if len(partes) < 2:
-                print(">> [ERROR] El modelo no sigue la nomenclatura Dispositivos_Actividades_X.")
-                continue
-                
-            # Extraer bloques de 2 letras
-            req_devs = [partes[0][i:i+2] for i in range(0, len(partes[0]), 2)]
-            req_acts = [partes[1][i:i+2] for i in range(0, len(partes[1]), 2)]
-            
-            # Validar dispositivos conectados
-            connected_aliases = [info['alias'] for info in ble.connected_devices.values()]
-            connected_prefixes = [DEVICE_PREFIXES.get(alias) for alias in connected_aliases]
-            
-            if sorted(req_devs) != sorted(connected_prefixes):
-                print("\n>> [ERROR] Los dispositivos conectados no coinciden con las necesidades del modelo.")
-                print(f"   El modelo requiere: {req_devs}")
-                print(f"   Usted ha conectado: {connected_prefixes}")
+            # Validar y cargar configuración del modelo
+            config_path = os.path.join("model_configurations", f"{modelo_elegido}.txt")
+            if not os.path.exists(config_path):
+                print(f">> [ERROR] Falta el fichero de configuración: {config_path}")
                 await asyncio.sleep(2)
                 continue
-                
-            # Solicitar nombres de actividades
-            print("\n--- Configuración de Actividades ---")
+            
+            req_devs = []
             clases_finales = []
-            for act in req_acts:
-                nombre_act = await asyncio.to_thread(input, f"Actividad correspondiente con '{act}': ")
-                clases_finales.append(nombre_act.strip())
-                
-            # Ordenar las MACs según el modelo (Para que la red reciba los datos en orden)
+            try:
+                with open(config_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("DEVICES:"):
+                            req_devs = [d.strip() for d in line.split("DEVICES:")[1].split(",")]
+                        elif line.startswith("CLASSES:"):
+                            clases_finales = [c.strip() for c in line.split("CLASSES:")[1].split(",")]
+            except Exception as e:
+                print(f">> [ERROR] Fallo crítico al leer {config_path}: {e}")
+                continue
+            
+            if not req_devs or not clases_finales:
+                print(">> [ERROR] El fichero de configuración está mal formateado o incompleto.")
+                await asyncio.sleep(2)
+                continue
+
+            # Validar si los dispositivos conectados tienen los alias requeridos
+            connected_aliases = [info['alias'] for info in ble.connected_devices.values()]
+            faltan = [d for d in req_devs if d not in connected_aliases]
+            
+            if faltan:
+                print("\n>> [ERROR] Los alias de los dispositivos conectados no coinciden con el modelo.")
+                print(f"   Requeridos por config: {req_devs}")
+                print(f"   Conectados actualmente: {connected_aliases}")
+                print(f"   Faltan: {faltan}")
+                await asyncio.sleep(3)
+                continue
+
+            print(f"\n>> Configuración cargada correctamente.")
+            print(f"   Clases a predecir: {clases_finales}")
+
+            # Ordenar las MACs según el orden exacto del fichero de configuración
             mac_order = []
             for req in req_devs:
                 for mac, info in ble.connected_devices.items():
-                    if DEVICE_PREFIXES.get(info['alias']) == req and mac not in mac_order:
+                    if info['alias'] == req and mac not in mac_order:
                         mac_order.append(mac)
                         break
-                        
+
             # Instanciar y arrancar IA
             global ai_system
             print(f"\n>> Cargando modelo '{modelo_elegido}' en memoria (esto puede tardar unos segundos)...")            
