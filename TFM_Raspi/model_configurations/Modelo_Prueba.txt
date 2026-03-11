@@ -1,0 +1,2 @@
+DEVICES: Volante_Coche
+CLASSES: Circles, Shake, Tilt

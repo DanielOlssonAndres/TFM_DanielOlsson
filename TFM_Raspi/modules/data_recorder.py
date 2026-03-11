@@ -227,14 +227,19 @@ class DataRecorder:
         time_str = datetime.now().strftime("%H%M")
         
         for mac, rows in self.recorded_rows.items():
-            alias = self.aliases.get(mac, "Unknown")
+            # Limpiamos barras bajas y espacios del alias
+            alias_crudo = self.aliases.get(mac, "Unknown")
+            alias_limpio = alias_crudo.replace("_", "").replace(" ", "")
             
-            # Extraer el nombre del dispositivo 
+            # Limpiamos barras bajas y espacios del nombre del dispositivo
             dev_info = connected_devices.get(mac, {})
-            dev_name = dev_info.get("name", "UnknownDev").replace(" ", "")
+            dev_name_crudo = dev_info.get("name", "UnknownDev")
+            dev_name_limpio = dev_name_crudo.replace("_", "").replace(" ", "")
             
             # Formato: ESP32Name_Alias_Gestos_Hora.csv
-            filename = f"{dev_name}_{alias}_{gesture_str}_{time_str}.csv"
+            filename = f"{dev_name_limpio}_{alias_limpio}_{gesture_str}_{time_str}.csv"
+            
+            # Reconstruimos la ruta completa del archivo
             filepath = os.path.join("grabaciones", filename)
             
             with open(filepath, 'w', newline='') as f:
