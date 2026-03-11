@@ -112,48 +112,29 @@ async def main():
             
             # Bucle para el submenú de gráficos
             while True:
-                print("\n1. Grabar SIN visualizador de energía")
-                print("2. Grabar CON visualizador en HDMI (Pantalla local Raspi)")
-                print("3. Grabar CON visualizador usando ssh -X (X11 Forwarding a PC)")
-                print("4. Volver al menú principal")
+                print("\n1. Grabar CON visualizador de energía")
+                print("2. Grabar SIN visualizador de energía")
+                print("3. Volver al menú principal")
                 
-                modo = await input_async("\n>> Elija una opción (1-4): ")
+                modo = await input_async("\n>> Elija una opción (1-3): ")
                 modo = modo.strip()
                 
                 if modo == "1":
-                    recorder.use_visualizer = False
+                    recorder.use_visualizer = True
                     break
                     
                 elif modo == "2":
-                    # Inyección directa para forzar la salida por HDMI físico
-                    uid = os.getuid()
-                    os.environ['DISPLAY'] = ':0'
-                    os.environ['WAYLAND_DISPLAY'] = 'wayland-0'
-                    os.environ['XDG_RUNTIME_DIR'] = f'/run/user/{uid}'
-                    
-                    user_home = os.path.expanduser('~')
-                    xauth_path = os.path.join(user_home, '.Xauthority')
-                    if os.path.exists(xauth_path):
-                        os.environ['XAUTHORITY'] = xauth_path
-                        
-                    recorder.use_visualizer = True
-                    break
+                    recorder.use_visualizer = False
+                    break 
                     
                 elif modo == "3":
-                    # Limpiamos variables de Wayland por si se ejecutó la opción 2 antes
-                    os.environ.pop('WAYLAND_DISPLAY', None)
-                    # No tocamos DISPLAY; confiamos en que SSH inyectó `localhost:10.0`
-                    recorder.use_visualizer = True
-                    break
-                    
-                elif modo == "4":
                     break 
                     
                 else:
                     print(">> Opción no válida.")
 
             # Si el usuario eligió salir en el submenú, volvemos al menú principal
-            if modo == "4":
+            if modo == "3":
                 continue
 
             recorder.clear_memory()
