@@ -59,12 +59,14 @@ class SignalBuffer:
 
     def get_tensor_for_lstm(self):
         try:
-            # Crear array combinado
-            tensor = np.array([self.acc_x, self.acc_y, self.acc_z])
-            # Aplanar
-            tensor = tensor.flatten()
-            # Reshape con orden 'F' (Fortran-like index order)
-            tensor = np.reshape(tensor, (-1, self.window_size, 3), order='F')
+            # Apilar las matrices como columnas 
+            # Resultado: Array de dimensiones (window_size, 3)
+            tensor = np.column_stack((self.acc_x, self.acc_y, self.acc_z))
+            
+            # Añadir la dimensión del batch en el eje 0
+            # Resultado final: (1, window_size, 3)
+            tensor = np.expand_dims(tensor, axis=0)
+            
             return tensor
         
         except Exception as e:

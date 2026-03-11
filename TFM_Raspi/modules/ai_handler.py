@@ -85,7 +85,7 @@ class AIManager:
                     combined_tensor = np.concatenate([self.latest_tensors[m] for m in self.mac_order], axis=2)
                     
                     # Vaciamos el almacén para forzar que todos deban traer datos nuevos para la siguiente predicción
-                    self.latest_tensors = {m: None for m in self.mac_order}
+                    #self.latest_tensors = {m: None for m in self.mac_order}
                     
                     # Mandamos al hilo de predicción
                     self.prediction_queue.put(combined_tensor)

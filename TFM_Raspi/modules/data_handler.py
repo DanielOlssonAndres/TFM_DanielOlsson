@@ -6,8 +6,8 @@ SAMPLES_PER_PACKET = 25
 # Función para decodificar un paquete de datos binarios recibido por BLE
 def decode_packet(data):
     
-    # El paquete debe tener exactamente 218 bytes
-    # 4 (seq) + 4 (time) + 35 * (2(x)+2(y)+2(z)) = 218
+    # El paquete debe tener exactamente 158 bytes
+    # 4 (seq) + 4 (time) + 25 * (2(x)+2(y)+2(z)) = 158
     expected_size = 4 + 4 + (SAMPLES_PER_PACKET * 6)
     
     # Comprobamos el tamaño del paquete (si se perdieron datos por el camino)

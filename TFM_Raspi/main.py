@@ -180,12 +180,13 @@ async def main():
             print("\n>> INICIANDO SISTEMA DE RECONOCIMIENTO MULTI-SENSOR")
             print(">> Pulse ENTER para detener y volver al menú.\n")
             
-            await ble.start_listening()
-            ai_system.start_prediction()
-            await asyncio.to_thread(input)
-            
-            ai_system.stop_prediction()
-            await ble.stop_listening()
+            try:
+                await ble.start_listening()
+                ai_system.start_prediction()
+                await asyncio.to_thread(input)
+            finally:
+                ai_system.stop_prediction()
+                await ble.stop_listening()
 
         elif choice == "3": # Desconectar dispositivo 
             if not ble.connected_devices:

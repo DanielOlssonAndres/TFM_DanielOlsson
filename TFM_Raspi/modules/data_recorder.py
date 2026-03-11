@@ -177,7 +177,14 @@ class DataRecorder:
                     self.frames_recorded[mac] += 1
 
         if self.use_visualizer and mac in self.queues:
-            self.queues[mac].put(samples)
+            # Evita enviar datos a un proceso muerto
+            if self.processes[mac].is_alive():
+                try:
+                    # Usar put_nowait evita bloqueos si la cola se llena porque el gráfico va lento
+                    self.queues[mac].put_nowait(samples)
+                except Exception:
+                    # Se ignoran excepciones de cola llena o tubería rota (BrokenPipeError)
+                    pass
 
     def start_visualizers(self, connected_devices):
         self.stop_visualizers()
@@ -192,11 +199,18 @@ class DataRecorder:
     def stop_visualizers(self):
         for mac, q in self.queues.items():
             try:
-                q.put("STOP")
-            except:
+                q.put_nowait("STOP")
+            except Exception:
                 pass
+                
         for p in self.processes.values():
-            p.join(timeout=1.0)
+            if p.is_alive():
+                p.join(timeout=1.0)
+                # Si tras 1 segundo el proceso no ha respondido al STOP, lo terminamos
+                if p.is_alive():
+                    p.terminate()
+                    p.join() # Aseguramos la recolección del proceso
+                    
         self.queues.clear()
         self.processes.clear()
 

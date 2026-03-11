@@ -1,8 +1,6 @@
 import asyncio
 import os
 import sys
-import glob
-import pwd
 import multiprocessing as mp
 from modules.ble_manager import BLEManager
 from modules.data_recorder import DataRecorder
@@ -34,49 +32,6 @@ async def seleccionar_posicion():
 
 async def input_async(prompt):
     return await asyncio.to_thread(input, prompt)
-
-def configurar_entorno_grafico():
-    # Gestiona el enrutamiento de la interfaz gráfica.
-    # Si detecta SSH con X11 Forwarding, envía la GUI al PC.
-    # Si no hay X11 Forwarding pero hay HDMI, salta la seguridad local para mostrar la GUI en la Raspi.
-    
-    display_actual = os.environ.get('DISPLAY')
-
-    # Caso SSH -X o terminal local ya configurada
-    if display_actual:
-        return True
-
-    # Caso SSH sin -X. Comprobamos si hay HDMI físico
-    hdmi_conectado = False
-    for port in glob.glob('/sys/class/drm/card*-HDMI-*/status'):
-        try:
-            with open(port, 'r') as f:
-                if 'connected' in f.read():
-                    hdmi_conectado = True
-                    break
-        except Exception:
-            pass
-
-    if hdmi_conectado:
-        # Inyectar variables de entorno para saltar la protección de la sesión local
-        uid = os.getuid()
-        user_home = os.path.expanduser('~')
-        
-        # Parámetros básicos para la pantalla principal
-        os.environ['DISPLAY'] = ':0'
-        os.environ['WAYLAND_DISPLAY'] = 'wayland-0'
-        
-        # Parámetro de seguridad para X11
-        xauth_path = os.path.join(user_home, '.Xauthority')
-        if os.path.exists(xauth_path):
-            os.environ['XAUTHORITY'] = xauth_path
-            
-        # Parámetro de seguridad para Wayland 
-        os.environ['XDG_RUNTIME_DIR'] = f'/run/user/{uid}'
-        
-        return True
-
-    return False
 
 async def main():
     # Inicializamos el grabador de datos 
@@ -157,35 +112,48 @@ async def main():
             
             # Bucle para el submenú de gráficos
             while True:
-                print("\n1. Grabar CON visualizador de energía")
-                print("2. Grabar SIN visualizador de energía")
-                print("3. Volver al menú principal")
+                print("\n1. Grabar SIN visualizador de energía")
+                print("2. Grabar CON visualizador en HDMI (Pantalla local Raspi)")
+                print("3. Grabar CON visualizador usando ssh -X (X11 Forwarding a PC)")
+                print("4. Volver al menú principal")
                 
-                modo = await input_async("\n>> Elija una opción (1-3): ")
+                modo = await input_async("\n>> Elija una opción (1-4): ")
                 modo = modo.strip()
                 
                 if modo == "1":
-                    if not configurar_entorno_grafico():
-                        print("\n>> [ERROR] Esta opción no está disponible. No se detecta X11 Forwarding (ssh -X)")
-                        print(">> ni un monitor HDMI conectado físicamente a la Raspberry Pi.")
-                        print(">> Por favor, elija la opción 2.")
-                        continue
-                    else:
-                        recorder.use_visualizer = True
-                        break
-                        
-                elif modo == "2":
                     recorder.use_visualizer = False
-                    break # Salimos del submenú para continuar con la grabación
+                    break
+                    
+                elif modo == "2":
+                    # Inyección directa para forzar la salida por HDMI físico
+                    uid = os.getuid()
+                    os.environ['DISPLAY'] = ':0'
+                    os.environ['WAYLAND_DISPLAY'] = 'wayland-0'
+                    os.environ['XDG_RUNTIME_DIR'] = f'/run/user/{uid}'
+                    
+                    user_home = os.path.expanduser('~')
+                    xauth_path = os.path.join(user_home, '.Xauthority')
+                    if os.path.exists(xauth_path):
+                        os.environ['XAUTHORITY'] = xauth_path
+                        
+                    recorder.use_visualizer = True
+                    break
                     
                 elif modo == "3":
-                    break # Salimos del submenú
+                    # Limpiamos variables de Wayland por si se ejecutó la opción 2 antes
+                    os.environ.pop('WAYLAND_DISPLAY', None)
+                    # No tocamos DISPLAY; confiamos en que SSH inyectó `localhost:10.0`
+                    recorder.use_visualizer = True
+                    break
+                    
+                elif modo == "4":
+                    break 
                     
                 else:
                     print(">> Opción no válida.")
 
             # Si el usuario eligió salir en el submenú, volvemos al menú principal
-            if modo == "3":
+            if modo == "4":
                 continue
 
             recorder.clear_memory()
@@ -240,6 +208,12 @@ async def main():
                 
                 # Cuando se alcanza la meta o se aborta por desconexión, paramos internamente
                 recorder.stop_recording()
+                
+                # Si la grabación paró porque nos quedamos sin dispositivos, abortamos la secuencia completa
+                if not active_macs:
+                    print("\n   [ABORTADO] Secuencia de grabación interrumpida por desconexión total.")
+                    break # Rompe el bucle 'for gesture in gestures'
+                
                 print(f"\n   [DETENIDO] Grabación de '{gesture}' finalizada.")
             
             # Parada del sistema y guardado 
