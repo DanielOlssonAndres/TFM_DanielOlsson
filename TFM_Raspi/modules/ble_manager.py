@@ -11,6 +11,7 @@ class BLEManager:
         self.connected_devices = {}  # Diccionario: {mac: {client, alias, ...}}
         self.scanner = BleakScanner()
         self.data_callback = data_callback # Enlace con parte de IA
+        self.device_states = {} # Registro de estado para control de pérdidas por MAC
 
     # Callback para manejar apagado/reset de dispositivos => Desconexiones
     def _handle_disconnect(self, client):
@@ -20,6 +21,10 @@ class BLEManager:
         if mac in self.connected_devices:
             alias = self.connected_devices[mac]['alias'] 
             del self.connected_devices[mac]
+
+        # Limpiar el estado de secuencia
+        if mac in self.device_states:
+            del self.device_states[mac]
 
         # Creamos una tarea en el event loop actual para no bloquear este callback
         loop = asyncio.get_event_loop()
@@ -52,15 +57,53 @@ class BLEManager:
         if packet:    
             samples = packet['samples']       
             seq = packet['sequence_id']
-            n_samples = len(packet['samples'])
+            n_samples = len(samples)
             
-            # Pasamos los datos a la IA
-            if self.data_callback:
-                self.data_callback(mac, alias, samples)
+            # Primer paquete recibido de este dispositivo
+            if mac not in self.device_states:
+                self.device_states[mac] = {'last_seq': seq, 'last_samples': samples}
+                if self.data_callback:
+                    self.data_callback(mac, alias, samples)
+                else:
+                    print(f"[{alias}] Dato recibido (sin procesar)")
+                    
+            # Siguientes paquetes: comprobación de secuencia
             else:
-                # Si no hay IA conectada, solo imprimimos los datos raw (Modo Debug)
-                print(f"[{alias}] Dato recibido (sin procesar)")
+                last_seq = self.device_states[mac]['last_seq']
+                expected_seq = last_seq + 1
 
+                # Detección de pérdida
+                if seq > expected_seq:
+                    lost_count = seq - expected_seq
+                    print(f"\n[AVISO - {alias}] Pérdida detectada: {lost_count} paquete(s) no recibidos. Reconstruyendo...")
+
+                    # Calcular la media del paquete anterior
+                    last_samples = self.device_states[mac]['last_samples']
+                    avg_x = int(sum(s['x'] for s in last_samples) / n_samples)
+                    avg_y = int(sum(s['y'] for s in last_samples) / n_samples)
+                    avg_z = int(sum(s['z'] for s in last_samples) / n_samples)
+
+                    # Crear el paquete sintético plano
+                    synthetic_samples = [{'x': avg_x, 'y': avg_y, 'z': avg_z} for _ in range(n_samples)]
+
+                    # Inyectar los paquetes sintéticos para mantener la sincronización temporal
+                    if self.data_callback:
+                        for _ in range(lost_count):
+                            self.data_callback(mac, alias, synthetic_samples)
+
+                # Detección de reinicio del contador 
+                elif seq < last_seq:
+                    print(f"\n[INFO - {alias}] Reinicio de secuencia BLE detectado (Anterior: {last_seq}, Nuevo: {seq}).")
+
+                # Actualizar el tracker con los datos del paquete actual
+                self.device_states[mac]['last_seq'] = seq
+                self.device_states[mac]['last_samples'] = samples
+
+                # Pasar el paquete real actual 
+                if self.data_callback:
+                    self.data_callback(mac, alias, samples)
+                else:
+                    print(f"[{alias}] Dato recibido (sin procesar)")
 
         else:
             print(f"[{alias}] Error: Paquete corrupto o tamaño inválido.")
