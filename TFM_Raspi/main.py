@@ -12,7 +12,7 @@ ai_system = None # Variable global para instanciar la IA dinámicamente
 # Función para enviar los datos solo si la IA está iniciada
 def data_router(mac, alias, samples, timestamp):
     if ai_system and ai_system.is_active:
-        ai_system.process_incoming_data(mac, alias, samples)
+        ai_system.process_incoming_data(mac, alias, samples, timestamp)
 
 async def seleccionar_posicion():
     opciones_validas = {
