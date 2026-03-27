@@ -52,7 +52,7 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = { /* Tabla de servicios G
                 .uuid = &batt_chr_uuid.u,
                 .access_cb = batt_chr_access,
                 /* Lectura encriptada (just works) */
-                .flags = BLE_GATT_CHR_F_READ_ENC, 
+                .flags = BLE_GATT_CHR_F_READ,
                 .val_handle = &batt_chr_val_handle
             },
             { 0 }
