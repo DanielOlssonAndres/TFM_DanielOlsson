@@ -51,7 +51,8 @@ async def main():
         print("1. Registrar un nuevo dispositivo")
         print("2. Empezar el grabado de datos")
         print("3. Desconectar dispositivo")
-        print("4. Finalizar programa")
+        print("4. Consultar niveles de batería")
+        print("5. Finalizar programa")
         
         choice = await input_async("\n>> Seleccione opción: ")
         choice = choice.strip()
@@ -229,6 +230,24 @@ async def main():
                 pass
 
         elif choice == "4":
+            if not ble.connected_devices:
+                print(">> No hay dispositivos conectados.")
+                await asyncio.sleep(1)
+                continue
+
+            print("\n--- Nivel de Batería ---")
+            for mac, info in ble.connected_devices.items():
+                alias = info['alias']
+                nivel = await ble.read_battery_level(mac)
+                
+                if nivel is not None:
+                    print(f" * {alias} ({mac}): {nivel}%")
+                else:
+                    print(f" * {alias} ({mac}): ERROR DE LECTURA")
+                    
+            await input_async("\nPulse ENTER para continuar...")
+
+        elif choice == "5":
             break
 
     # Cierre limpio

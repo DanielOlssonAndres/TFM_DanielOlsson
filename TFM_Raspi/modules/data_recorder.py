@@ -151,7 +151,7 @@ class DataRecorder:
             return 0
         return max(self.frames_recorded.values())
 
-    def process_incoming_data(self, mac, alias, samples):
+    def process_incoming_data(self, mac, alias, samples, timestamp = None):
         if mac not in self.aliases:
             self.aliases[mac] = alias
             
@@ -164,11 +164,14 @@ class DataRecorder:
                 
                 # Si el buffer dice que hay un frame completo listo
                 if is_ready:
-                    # Aplastar los datos: [200 X] + [200 Y] + [200 Z] + [Gesto]
-                    flat_row = list(self.buffers[mac].acc_x) + \
-                               list(self.buffers[mac].acc_y) + \
-                               list(self.buffers[mac].acc_z) + \
-                               [self.current_gesture]
+                    # Aplastar los datos manteniendo el orden temporal [X1,Y1,Z1, X2,Y2,Z2...]
+                    tensor_2d = np.column_stack((
+                        self.buffers[mac].acc_x, 
+                        self.buffers[mac].acc_y, 
+                        self.buffers[mac].acc_z
+                    ))
+                    
+                    flat_row = list(tensor_2d.flatten()) + [self.current_gesture]
                     
                     if mac not in self.recorded_rows:
                         self.recorded_rows[mac] = []

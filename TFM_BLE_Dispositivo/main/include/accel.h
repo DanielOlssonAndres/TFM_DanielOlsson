@@ -3,6 +3,7 @@
 
 #include <stdint.h> /*Para gestion de los tipos de datos*/
 #include <stdbool.h>
+#include "esp_err.h"
 
 #define ACCEL_SAMPLING_FREQ 50 /* 50 Hz = 1 muestra cada 20ms */
 #define SAMPLES_PER_PACKET  25 /* Numero de muestras por paquete */
@@ -23,7 +24,7 @@ typedef struct __attribute__((packed)) {
 } accel_packet_t;
 
 /* Declaraciones de funciones */
-void accel_init(void);
+esp_err_t accel_init(void);
 void accel_sample_and_store(void); /* Toma 1 muestra y la guarda en el buffer */
 bool accel_is_batch_ready(void);   /* ¿Está el buffer lleno? */
 accel_packet_t* accel_get_batch(void); /* Devuelve el paquete listo */

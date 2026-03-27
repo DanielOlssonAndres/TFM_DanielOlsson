@@ -575,6 +575,13 @@ C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_D
 C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/driver/CMakeFiles/install.dir
 C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/driver/CMakeFiles/install/local.dir
 C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/driver/CMakeFiles/install/strip.dir
+C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/esp_adc/CMakeFiles/__idf_esp_adc.dir
+C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/esp_adc/CMakeFiles/edit_cache.dir
+C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/esp_adc/CMakeFiles/rebuild_cache.dir
+C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/esp_adc/CMakeFiles/list_install_components.dir
+C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/esp_adc/CMakeFiles/install.dir
+C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/esp_adc/CMakeFiles/install/local.dir
+C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/esp_adc/CMakeFiles/install/strip.dir
 C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/espressif__led_strip/CMakeFiles/__idf_espressif__led_strip.dir
 C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/espressif__led_strip/CMakeFiles/edit_cache.dir
 C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/espressif__led_strip/CMakeFiles/rebuild_cache.dir

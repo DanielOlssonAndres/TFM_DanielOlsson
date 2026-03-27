@@ -10,7 +10,7 @@ ai_system = None # Variable global para instanciar la IA dinámicamente
 # Funciones auxiliares
 
 # Función para enviar los datos solo si la IA está iniciada
-def data_router(mac, alias, samples):
+def data_router(mac, alias, samples, timestamp):
     if ai_system and ai_system.is_active:
         ai_system.process_incoming_data(mac, alias, samples)
 
@@ -60,7 +60,8 @@ async def main():
         print("1. Registrar un nuevo dispositivo")
         print("2. Comenzar la recepción de datos")
         print("3. Desconectar dispositivo")
-        print("4. Finalizar programa")
+        print("4. Consultar niveles de batería")
+        print("5. Finalizar programa")
         
         choice = await asyncio.to_thread(input, "\n>> Seleccione opción: ")
 
@@ -219,7 +220,25 @@ async def main():
             except ValueError:
                 print(">> Entrada inválida. Introduzca el número del índice.")
 
-        elif choice == "4": # Finalizar programa
+        elif choice == "4": 
+            if not ble.connected_devices:
+                print(">> No hay dispositivos conectados.")
+                await asyncio.sleep(1)
+                continue
+
+            print("\n--- Nivel de Batería ---")
+            for mac, info in ble.connected_devices.items():
+                alias = info['alias']
+                nivel = await ble.read_battery_level(mac)
+                
+                if nivel is not None:
+                    print(f" * {alias} ({mac}): {nivel}%")
+                else:
+                    print(f" * {alias} ({mac}): ERROR DE LECTURA")
+                    
+            await asyncio.to_thread(input, "\nPulse ENTER para continuar...")
+
+        elif choice == "5": # Finalizar programa
             break
         
         else:

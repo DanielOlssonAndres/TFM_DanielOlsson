@@ -2,6 +2,8 @@
 #include "common.h"
 #include "driver/i2c.h"
 #include "esp_timer.h" // Para el reloj de alta precisión
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #define I2C_MASTER_SCL_IO           33    /* GPIO para Clock (SCL) */
 #define I2C_MASTER_SDA_IO           32    /* GPIO para Data (SDA) */
@@ -15,6 +17,9 @@
 #define MPU6050_PWR_MGMT_1          0x6B  /* Registro de energía */
 #define MPU6050_ACCEL_CONFIG        0x1C  /* Configuración del acelerómetro */
 #define MPU6050_ACCEL_XOUT_H        0x3B  /* Primer registro de datos */
+
+/* Mutex */
+static SemaphoreHandle_t accel_mutex = NULL;
 
 static accel_packet_t acc_buffer; /* El paquete que estamos llenando */
 static accel_raw_t last_sample; /* Ultima muestra */
@@ -54,24 +59,31 @@ static esp_err_t mpu6050_write_byte(uint8_t reg_addr, uint8_t data) {
     return ret;
 }
 
-void accel_init(void) {
+esp_err_t accel_init(void) {
+    accel_mutex = xSemaphoreCreateMutex();
+    if (accel_mutex == NULL) return ESP_FAIL;
 
-    ESP_ERROR_CHECK(i2c_master_init());
-    ESP_ERROR_CHECK(mpu6050_write_byte(MPU6050_PWR_MGMT_1, 0x00));
+    esp_err_t err = i2c_master_init();
+    if (err != ESP_OK) return err;
+
+    err = mpu6050_write_byte(MPU6050_PWR_MGMT_1, 0x00);
+    if (err != ESP_OK) return err;
 
     /* Configurar escala (±4g) */
-    /* 0x00=2g, 0x08=4g, 0x10=8g, 0x18=16g */
-    ESP_ERROR_CHECK(mpu6050_write_byte(MPU6050_ACCEL_CONFIG, 0x08));
+    err = mpu6050_write_byte(MPU6050_ACCEL_CONFIG, 0x08);
+    if (err != ESP_OK) return err;
+
     start_time_offset = esp_timer_get_time();
+    return ESP_OK;
 }
 
 void accel_reset_counters(void) {
-
-    global_packet_counter = 0;
-    sample_count = 0;
-    
-    /* Se marca el "Ahora" como el nuevo punto cero */
-    start_time_offset = esp_timer_get_time();    
+    if (xSemaphoreTake(accel_mutex, portMAX_DELAY) == pdTRUE) {
+        global_packet_counter = 0;
+        sample_count = 0;
+        start_time_offset = esp_timer_get_time();    
+        xSemaphoreGive(accel_mutex);
+    }
 }
 
 void accel_sample_and_store(void) {
@@ -79,14 +91,6 @@ void accel_sample_and_store(void) {
     int64_t current_time;
     int64_t relative_time;
     uint8_t raw_data[6]; /* Buffer para X, Y, Z */
-
-    /* Gestión de cabecera del paquete si es la primera muestra */
-    if (sample_count == 0) {
-        current_time = esp_timer_get_time();
-        relative_time = current_time - start_time_offset;
-        acc_buffer.timestamp_start = (uint32_t)(relative_time / 1000); 
-        acc_buffer.sequence_id = global_packet_counter;
-    }
 
     /* Lectura I2C en ráfaga */
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -104,31 +108,45 @@ void accel_sample_and_store(void) {
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
 
-    if (ret == ESP_OK) {
-        /* Unir bytes High y Low en entero de 16 bits con signo */
-        acc_buffer.samples[sample_count].x = (int16_t)((raw_data[0] << 8) | raw_data[1]);
-        acc_buffer.samples[sample_count].y = (int16_t)((raw_data[2] << 8) | raw_data[3]);
-        acc_buffer.samples[sample_count].z = (int16_t)((raw_data[4] << 8) | raw_data[5]);
-    } else {
-        /* En caso de error, ponemos 0 para evitar datos basura */
-        acc_buffer.samples[sample_count].x = 0;
-        acc_buffer.samples[sample_count].y = 0;
-        acc_buffer.samples[sample_count].z = 0;
+    if (xSemaphoreTake(accel_mutex, portMAX_DELAY) == pdTRUE) {
+        if (sample_count == 0) {
+            current_time = esp_timer_get_time();
+            relative_time = current_time - start_time_offset;
+            acc_buffer.timestamp_start = (uint32_t)(relative_time / 1000); 
+            acc_buffer.sequence_id = global_packet_counter;
+        }
+
+        if (ret == ESP_OK) {
+            acc_buffer.samples[sample_count].x = (int16_t)((raw_data[0] << 8) | raw_data[1]);
+            acc_buffer.samples[sample_count].y = (int16_t)((raw_data[2] << 8) | raw_data[3]);
+            acc_buffer.samples[sample_count].z = (int16_t)((raw_data[4] << 8) | raw_data[5]);
+        } else {
+            acc_buffer.samples[sample_count].x = 0;
+            acc_buffer.samples[sample_count].y = 0;
+            acc_buffer.samples[sample_count].z = 0;
+        }
+
+        last_sample = acc_buffer.samples[sample_count];
+        sample_count++;
+        xSemaphoreGive(accel_mutex);
     }
-
-    /* Guardamos copia de la última muestra para lecturas individuales */
-    last_sample = acc_buffer.samples[sample_count];
-
-    sample_count++;
 }
 
 bool accel_is_batch_ready(void) {
-    return sample_count >= SAMPLES_PER_PACKET;
+    bool ready = false;
+    if (xSemaphoreTake(accel_mutex, portMAX_DELAY) == pdTRUE) {
+        ready = (sample_count >= SAMPLES_PER_PACKET);
+        xSemaphoreGive(accel_mutex);
+    }
+    return ready;
 }
 
 accel_packet_t* accel_get_batch(void) {
-    sample_count = 0;
-    global_packet_counter++;
+    if (xSemaphoreTake(accel_mutex, portMAX_DELAY) == pdTRUE) {
+        sample_count = 0;
+        global_packet_counter++;
+        xSemaphoreGive(accel_mutex);
+    }
     return &acc_buffer;
 }
 

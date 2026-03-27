@@ -5,6 +5,7 @@ from bleak import BleakClient, BleakScanner
 from modules.data_handler import decode_packet
 
 CHARACTERISTIC_UUID = "0000FF01-0000-1000-8000-00805F9B34FB"
+BATTERY_UUID = "00002A19-0000-1000-8000-00805F9B34FB"
 
 class BLEManager:
     def __init__(self, data_callback=None):
@@ -27,26 +28,14 @@ class BLEManager:
             del self.device_states[mac]
 
         # Creamos una tarea en el event loop actual para no bloquear este callback
-        loop = asyncio.get_event_loop()
-        loop.create_task(self._remove_bluetooth_device_async(mac))
+        # loop = asyncio.get_event_loop()
+        # loop.create_task(self._remove_bluetooth_device_async(mac))
 
         # Mensaje al usuario
         print(f"\n" + "!"*50)
         print(f" [AVISO] {alias} ({mac}) se ha desconectado.")
         print("!"*50 + "\n")
         print(">> (Presione Enter para actualizar el menú): ", end="", flush=True)
-
-    async def _remove_bluetooth_device_async(self, mac):
-        try:
-            # Ejecución no bloqueante en el sistema operativo
-            proc = await asyncio.create_subprocess_exec(
-                "bluetoothctl", "remove", mac,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            await proc.communicate()
-        except Exception as e:
-            print(f"Error borrando claves de sistema en segundo plano: {e}")
 
     # Callback para manejar notificaciones entrantes
     def _notification_handler(self, alias, mac, sender, data):
@@ -57,13 +46,14 @@ class BLEManager:
         if packet:    
             samples = packet['samples']       
             seq = packet['sequence_id']
+            timestamp = packet['timestamp_start']
             n_samples = len(samples)
             
             # Primer paquete recibido de este dispositivo
             if mac not in self.device_states:
                 self.device_states[mac] = {'last_seq': seq, 'last_samples': samples}
                 if self.data_callback:
-                    self.data_callback(mac, alias, samples)
+                    self.data_callback(mac, alias, samples, timestamp)
                 else:
                     print(f"[{alias}] Dato recibido (sin procesar)")
                     
@@ -88,8 +78,9 @@ class BLEManager:
 
                     # Inyectar los paquetes sintéticos para mantener la sincronización temporal
                     if self.data_callback:
-                        for _ in range(lost_count):
-                            self.data_callback(mac, alias, synthetic_samples)
+                        for i in range(lost_count):
+                            simulated_timestamp = timestamp - ((lost_count - i) * 500)
+                            self.data_callback(mac, alias, synthetic_samples, simulated_timestamp)
 
                 # Detección de reinicio del contador 
                 elif seq < last_seq:
@@ -101,7 +92,7 @@ class BLEManager:
 
                 # Pasar el paquete real actual 
                 if self.data_callback:
-                    self.data_callback(mac, alias, samples)
+                    self.data_callback(mac, alias, samples, timestamp)
                 else:
                     print(f"[{alias}] Dato recibido (sin procesar)")
 
@@ -188,4 +179,22 @@ class BLEManager:
         macs = list(self.connected_devices.keys())
         for mac in macs:
             await self.connected_devices[mac]['client'].disconnect()
+    
+    async def read_battery_level(self, mac):
+        if mac in self.connected_devices:
+            client = self.connected_devices[mac]['client']
+            alias = self.connected_devices[mac]['alias']
+            
+            if client.is_connected:
+                try:
+                    battery_data = await client.read_gatt_char(BATTERY_UUID)
+                    # El ESP32 envía un uint8_t, lo decodificamos directamente del índice 0
+                    return int(battery_data[0])
+                except Exception as e:
+                    print(f" -> Error leyendo batería de {alias}: {e}")
+                    return None
+            else:
+                print(f" -> {alias} no está conectado.")
+                return None
+        return None
     

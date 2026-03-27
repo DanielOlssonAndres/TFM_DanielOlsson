@@ -27,7 +27,6 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 
-/* --- FIX: Se añade este include para ble_store_config_init() --- */
 #include "host/ble_store.h" 
 
 /* --- CONFIGURACIÓN DEL DISPOSITIVO --- */

@@ -91,6 +91,11 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 /*El dispositivo anuncia su existencia al mundo*/
 static void start_advertising(void) { 
 
+    /* Prevenir sobresaturación: Si ya se está anunciando, cancelar ejecución */
+    if (ble_gap_adv_active()) {
+        return;
+    }
+
     struct ble_hs_adv_fields adv_fields = {0}; 
     struct ble_gap_adv_params adv_params = {0}; 
 

@@ -52,7 +52,7 @@ class SignalBuffer:
 
         # Si ya estaba lleno, verificamos si hemos superado el STEP (Window - Overlap)
         if self.is_buffer_full and self.new_samples_count >= self.step_size:
-            self.new_samples_count = 0 # Reset del contador de paso
+            self.new_samples_count -= self.step_size
             return True # Listo para predecir
 
         return False

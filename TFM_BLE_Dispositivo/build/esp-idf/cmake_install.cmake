@@ -364,6 +364,11 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/esp_adc/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("C:/Users/olsso/Documents/Universidad/Master_ETSIT/TFM/TFM_DanielOlsson/TFM_BLE_Dispositivo/build/esp-idf/espressif__led_strip/cmake_install.cmake")
 endif()
 

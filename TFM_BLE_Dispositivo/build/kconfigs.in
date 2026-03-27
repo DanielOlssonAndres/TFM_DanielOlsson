@@ -1,6 +1,7 @@
 source "C:/Users/olsso/esp/v5.5.1/esp-idf/components/bt/Kconfig"
 source "C:/Users/olsso/esp/v5.5.1/esp-idf/components/driver/Kconfig"
 source "C:/Users/olsso/esp/v5.5.1/esp-idf/components/efuse/Kconfig"
+source "C:/Users/olsso/esp/v5.5.1/esp-idf/components/esp_adc/Kconfig"
 source "C:/Users/olsso/esp/v5.5.1/esp-idf/components/esp_coex/Kconfig"
 source "C:/Users/olsso/esp/v5.5.1/esp-idf/components/esp_common/Kconfig"
 source "C:/Users/olsso/esp/v5.5.1/esp-idf/components/esp_driver_ana_cmpr/Kconfig"

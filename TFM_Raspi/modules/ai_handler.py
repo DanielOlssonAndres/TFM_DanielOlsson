@@ -21,6 +21,7 @@ class AIManager:
         self.model = self._load_model(model_name)
         
         self.latest_tensors = {mac: None for mac in self.mac_order}
+        self.latest_timestamps = {mac: 0 for mac in self.mac_order}
         self.prediction_queue = queue.Queue()
         self.worker_thread = threading.Thread(target=self._prediction_worker, daemon=True)
         self.worker_thread.start()
@@ -56,13 +57,14 @@ class AIManager:
         print(">> [IA] SISTEMA ACTIVADO. Esperando sincronización de sensores...")
         self.buffers.clear() 
         self.latest_tensors = {mac: None for mac in self.mac_order}
+        self.latest_timestamps = {mac: 0 for mac in self.mac_order}
         self.is_active = True
 
     def stop_prediction(self):
         self.is_active = False
         print(">> [IA] SISTEMA DETENIDO.")
 
-    def process_incoming_data(self, mac, alias, samples):
+    def process_incoming_data(self, mac, alias, samples, timestamp):
         if not self.is_active or mac not in self.mac_order:
             return
 
@@ -77,18 +79,31 @@ class AIManager:
             if tensor is not None:
                 # Guardamos el tensor más reciente para este dispositivo específico
                 self.latest_tensors[mac] = tensor
+                self.latest_timestamps[mac] = timestamp # Guardar el tiempo real de la ventana
                 
                 # Comprobamos si ya tenemos una ventana lista de todos los dispositivos requeridos
                 if all(t is not None for t in self.latest_tensors.values()):
                     
-                    # Concatenamos en el eje de las características (axis=2)
-                    combined_tensor = np.concatenate([self.latest_tensors[m] for m in self.mac_order], axis=2)
+                    # Extraer los tiempos actuales de todos los tensores listos
+                    tiempos = [self.latest_timestamps[m] for m in self.mac_order]
+                    diferencia_maxima = max(tiempos) - min(tiempos)
+
+                    # Si la diferencia entre los tensores es mayor a 600 ms, están desincronizados
+                    if diferencia_maxima > 600:
+                        print(f"[IA] AVISO: Desincronización detectada ({diferencia_maxima}ms). Descartando ventana...")
+                        # Identificar el dispositivo más atrasado y vaciar solo su tensor para esperar al siguiente
+                        min_mac = self.mac_order[np.argmin(tiempos)]
+                        self.latest_tensors[min_mac] = None
+                        return
                     
-                    # Vaciamos el almacén para forzar que todos deban traer datos nuevos para la siguiente predicción
-                    #self.latest_tensors = {m: None for m in self.mac_order}
+                    # Si están sincronizados, concatenar y predecir
+                    combined_tensor = np.concatenate([self.latest_tensors[m] for m in self.mac_order], axis=2)
                     
                     # Mandamos al hilo de predicción
                     self.prediction_queue.put(combined_tensor)
+                    
+                    # Vaciamos los tensores para requerir nuevos datos para la próxima ventana
+                    self.latest_tensors = {m: None for m in self.mac_order}
 
     def _prediction_worker(self):
         while True:

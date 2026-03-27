@@ -1,8 +1,13 @@
 #include "gatt_svc.h"
 #include "common.h"
 #include "accel.h" 
+#include "freertos/semphr.h"
+#include "battery.h"
 
 #define MAX_CONN MAX_CONNECTIONS_OPEN_MODE
+
+/* Mutex */
+static SemaphoreHandle_t conn_mutex = NULL;
 
 /* Array para guardar quién está conectado */
 static uint16_t conn_handles[MAX_CONNECTIONS]; 
@@ -13,7 +18,13 @@ static const ble_uuid16_t accel_svc_uuid = BLE_UUID16_INIT(0x00FF); /* UUID del 
 static const ble_uuid16_t accel_chr_uuid = BLE_UUID16_INIT(0xFF01); /* UUID de la característica del acelerometro */
 static uint16_t accel_chr_val_handle; /* Identificador de la caracteristica de acelerometro */
 
+/* UUIDs estándar de Bluetooth SIG para Batería */
+static const ble_uuid16_t batt_svc_uuid = BLE_UUID16_INIT(0x180F);
+static const ble_uuid16_t batt_chr_uuid = BLE_UUID16_INIT(0x2A19);
+static uint16_t batt_chr_val_handle;
+
 static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int batt_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = { /* Tabla de servicios GATT */
     {
@@ -28,38 +39,57 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = { /* Tabla de servicios G
                 .flags = BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &accel_chr_val_handle /*Identificador de la caracteristica de acelerometro*/
             },
-            {
-                0, /*Fin de la lista de características*/
-            }
+            { 0 } /*Fin de la lista de características*/
         },
     },
+
     {
-        0, /*Fin de la lista de servicios*/
+        /* Servicio de Batería */
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = &batt_svc_uuid.u,
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {
+                .uuid = &batt_chr_uuid.u,
+                .access_cb = batt_chr_access,
+                /* Lectura encriptada (just works) */
+                .flags = BLE_GATT_CHR_F_READ_ENC, 
+                .val_handle = &batt_chr_val_handle
+            },
+            { 0 }
+        },
     },
+    
+    { 0 } /* Fin de la lista de servicios */
 };
 
 /* Función para añadir suscripciones */
 static void add_subscriber(uint16_t conn_handle) {
-    for (int i = 0; i < MAX_CONNECTIONS; i++) {
-        if (!conn_slots[i]) { /* Buscamos hueco libre */
-            conn_handles[i] = conn_handle;
-            conn_slots[i] = true;
-            active_subscribers_count++;
-            return;
+    if (xSemaphoreTake(conn_mutex, portMAX_DELAY) == pdTRUE) {
+        for (int i = 0; i < MAX_CONNECTIONS; i++) {
+            if (!conn_slots[i]) { 
+                conn_handles[i] = conn_handle;
+                conn_slots[i] = true;
+                active_subscribers_count++;
+                break; 
+            }
         }
+        xSemaphoreGive(conn_mutex);
     }
 }
 
 /* Función para quitar suscripciones */
 static void remove_subscriber(uint16_t conn_handle) {
-    for (int i = 0; i < MAX_CONNECTIONS; i++) {
-        if (conn_slots[i] && conn_handles[i] == conn_handle) {
-            conn_slots[i] = false; /* Liberamos el hueco */
-            if (active_subscribers_count > 0) {
-                active_subscribers_count--; 
+    if (xSemaphoreTake(conn_mutex, portMAX_DELAY) == pdTRUE) {
+        for (int i = 0; i < MAX_CONNECTIONS; i++) {
+            if (conn_slots[i] && conn_handles[i] == conn_handle) {
+                conn_slots[i] = false; 
+                if (active_subscribers_count > 0) {
+                    active_subscribers_count--; 
+                }
+                break; 
             }
-            return;
         }
+        xSemaphoreGive(conn_mutex);
     }
 }
 
@@ -86,6 +116,18 @@ static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
     return BLE_ATT_ERR_UNLIKELY;
 }
 
+static int batt_chr_access(uint16_t conn_handle, uint16_t attr_handle,
+                           struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        if (attr_handle == batt_chr_val_handle) {
+            uint8_t batt_level = battery_get_level();
+            int rc = os_mbuf_append(ctxt->om, &batt_level, sizeof(batt_level));
+            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 /* ----------------- FUNCIONES PÚBLICAS --------------------- */
 
 /* Función de envío de Bloques */
@@ -93,22 +135,30 @@ void send_accel_batch(void) {
     accel_packet_t *batch;
     struct os_mbuf *om;
 
-    /* Si no hay nadie escuchando, vaciamos buffer y salimos */
-    if (active_subscribers_count == 0) {
-        accel_get_batch(); 
-        return;
-    }
-    
-    batch = accel_get_batch();
-
-    /* Comprobar si hay alguien escuchando */
-    for (int i=0; i<MAX_CONNECTIONS; i++) {
-        if (conn_slots[i]) {
-            /* Crear un mbuf NUEVO para cada envío */
-            om = ble_hs_mbuf_from_flat(batch, sizeof(accel_packet_t));
-            ble_gatts_notify_custom(conn_handles[i], accel_chr_val_handle, om);
-            break;
+    if (xSemaphoreTake(conn_mutex, portMAX_DELAY) == pdTRUE) {
+        
+        if (active_subscribers_count == 0) {
+            accel_get_batch(); 
+            xSemaphoreGive(conn_mutex);
+            return;
         }
+        
+        batch = accel_get_batch();
+
+        for (int i=0; i<MAX_CONNECTIONS; i++) {
+            if (conn_slots[i]) {
+                om = ble_hs_mbuf_from_flat(batch, sizeof(accel_packet_t));
+                
+                /* Prevención de Out of Memory */
+                if (om == NULL) {
+                    ESP_LOGW("GATT", "Pool de mbufs agotado. Paquete descartado para conn %d", conn_handles[i]);
+                    continue; 
+                }
+
+                ble_gatts_notify_custom(conn_handles[i], accel_chr_val_handle, om);
+            }
+        }
+        xSemaphoreGive(conn_mutex);
     }
 }
 
@@ -130,6 +180,10 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
 int gatt_svc_init(void) {
     
     int rc;
+
+    /* Mutex para proteger arrays de conexión */
+    conn_mutex = xSemaphoreCreateMutex();
+    if (conn_mutex == NULL) { return BLE_HS_ENOMEM; }
 
     ble_svc_gatt_init(); /*Inicializa el servicio GATT (obligatorio por estandar)*/
     rc = ble_gatts_count_cfg(gatt_svr_svcs); /*Contamos los servicios (seguridad)*/
