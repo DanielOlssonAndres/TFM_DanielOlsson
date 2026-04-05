@@ -2,6 +2,7 @@ import numpy as np
 
 WINDOW_SIZE = 200   
 OVERLAP = 150 
+SCALE_FACTOR = 4096.0  # Sensibilidad para ±8g
 
 class SignalBuffer:
     def __init__(self, window_size=WINDOW_SIZE, overlap=OVERLAP):
@@ -23,12 +24,12 @@ class SignalBuffer:
         if n_new == 0:
             return False
 
-        # AQUI SE AÑADIRÍA PREPROCESADO DE DATOS SI NECESARIO
-
-        # Extraer los datos en listas separadas
-        new_x = np.array([s['x'] for s in samples], dtype=np.float64)
-        new_y = np.array([s['y'] for s in samples], dtype=np.float64)
-        new_z = np.array([s['z'] for s in samples], dtype=np.float64)
+        # PREPROCESADO ----------------------------------
+        # Extraer los datos y convertirlos a gravedades (g) reales
+        new_x = np.array([s['x'] for s in samples], dtype=np.float64) / SCALE_FACTOR
+        new_y = np.array([s['y'] for s in samples], dtype=np.float64) / SCALE_FACTOR
+        new_z = np.array([s['z'] for s in samples], dtype=np.float64) / SCALE_FACTOR
+        # ----------------------------------------------
 
         # Lógica del buffer circular 
         # Desplazamos los datos antiguos hacia la izquierda

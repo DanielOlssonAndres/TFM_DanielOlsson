@@ -4,8 +4,6 @@
 #include "freertos/semphr.h"
 #include "battery.h"
 
-#define MAX_CONN MAX_CONNECTIONS_OPEN_MODE
-
 /* Mutex */
 static SemaphoreHandle_t conn_mutex = NULL;
 

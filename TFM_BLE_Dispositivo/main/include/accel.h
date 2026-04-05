@@ -30,5 +30,6 @@ bool accel_is_batch_ready(void);   /* ¿Está el buffer lleno? */
 accel_packet_t* accel_get_batch(void); /* Devuelve el paquete listo */
 accel_raw_t accel_get_last_sample(void); /* Leer el ultimo dato */
 void accel_reset_counters(void);
+void accel_clear_latch(void);
 
 #endif 

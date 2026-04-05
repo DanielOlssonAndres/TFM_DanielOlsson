@@ -7,8 +7,14 @@
 #define MODE_SWITCH_GPIO GPIO_NUM_13
 #define LED_GREEN_GPIO GPIO_NUM_26
 #define LED_RED_GPIO GPIO_NUM_27
+#define MPU_INT_GPIO GPIO_NUM_25
 
 bool is_single_link_mode = true;
+
+/* Handle para poder despertar la tarea desde la interrupción */
+static TaskHandle_t accel_task_handle = NULL;
+
+static TaskHandle_t ble_send_task_handle = NULL; 
 
 /* --------------------- FUNCIONES ---------------------------*/
 
@@ -77,6 +83,35 @@ static void nimble_host_config_init(void) {
     ble_att_set_preferred_mtu(256); /* Aceptamos paquetes de hasta 256 bytes */
 }
 
+/* Rutina de Servicio de Interrupción (ISR) del acelerómetro */
+static void IRAM_ATTR mpu_isr_handler(void* arg) {
+    if (accel_task_handle == NULL) {
+        return; 
+    }
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(accel_task_handle, &xHigherPriorityTaskWoken);
+    
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken); 
+    }
+}
+
+static void setup_mpu_interrupt(void) {
+    gpio_config_t io_conf = {
+        .intr_type = GPIO_INTR_POSEDGE,  /* Disparo en flanco de subida */
+        .pin_bit_mask = (1ULL << MPU_INT_GPIO),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = 0,
+        .pull_down_en = 1 /* Pull-down para evitar falsos disparos */
+    };
+    gpio_config(&io_conf);
+    
+    /* El parámetro 0 asigna flags por defecto */
+    gpio_install_isr_service(0); 
+    gpio_isr_handler_add(MPU_INT_GPIO, mpu_isr_handler, NULL);
+}
+
 /* --------------------- TAREAS FREERTOS ---------------------------*/
 
 /* Mantener vivo el sistema Bluetooth*/
@@ -87,22 +122,22 @@ static void nimble_host_task(void *param) {
 
 /* Leer sensor y generar los datos */
 static void accelerometer_task(void *param) {
-
-    const TickType_t xFrequency = pdMS_TO_TICKS(1000 / ACCEL_SAMPLING_FREQ); /* 20ms */
-    TickType_t xLastWakeTime;
-    
-    xLastWakeTime = xTaskGetTickCount();
-
     while (1) {
-
-        /* Tomamos una muestra y la metemos en el buffer */
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         accel_sample_and_store();
-        if (accel_is_batch_ready()) { /* Si el buffer se llena, lo enviamos */
-            send_accel_batch();
+        
+        if (accel_is_batch_ready()) { 
+            /* Avisar a la tarea BLE de que hay un búfer listo, y seguir leyendo I2C inmediatamente */
+            xTaskNotifyGive(ble_send_task_handle);
         }
+    }
+}
 
-        /* Esperar hasta el siguiente ciclo */
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+static void ble_send_worker_task(void *param) {
+    while(1) {
+        /* Esperar hasta que el acelerómetro llene el búfer */
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        send_accel_batch();
     }
 }
 
@@ -169,7 +204,12 @@ void app_main(void) {
 
     /* Crear tareas FreeRTOS */
     xTaskCreate(nimble_host_task, "NimBLE_Host", 4*1024, NULL, 5, NULL); 
-    xTaskCreate(accelerometer_task, "Accel_Task", 4*1024, NULL, 4, NULL); 
+    xTaskCreate(ble_send_worker_task, "BLE_Send", 4*1024, NULL, 3, &ble_send_task_handle); /* Consumidor */
+    xTaskCreate(accelerometer_task, "Accel_Task", 4*1024, NULL, 4, &accel_task_handle);    /* Productor */
+    /* Iniciar la interrupción hardware del acelerómetro después de crear la tarea */
+    setup_mpu_interrupt();
+    /* Desbloqueo de hardware sin afectar a los búferes de la IA */
+    accel_clear_latch();
 
     ESP_LOGI("MAIN", "Sistema inicializado correctamente. Listo para conectar.");
     gpio_set_level(LED_GREEN_GPIO, 1); /* Encender LED Verde */

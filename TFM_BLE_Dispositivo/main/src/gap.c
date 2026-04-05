@@ -39,11 +39,11 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
                 /* Si llegamos al límite, no hacemos nada y el anuncio se detiene solo */
 
                 /* Petición de modo rápido */
-                /* Solicitamos bajar la latencia para enviar datos fluidos */
-                params.itvl_min = 6;  /* 7.5 ms (6 * 1.25) */
-                params.itvl_max = 12; /* 15 ms  (12 * 1.25) */
+                /* Petición de modo equilibrado (despierta cada ~100ms) */
+                params.itvl_min = 80;   /* 100 ms (80 * 1.25) */
+                params.itvl_max = 160;  /* 200 ms (160 * 1.25) */
                 params.latency = 0;
-                params.supervision_timeout = 100;
+                params.supervision_timeout = 200; /* 2 segundos (200 * 10ms) */
                 
                 rc = ble_gap_update_params(event->connect.conn_handle, &params);
                 if (rc != 0) {
