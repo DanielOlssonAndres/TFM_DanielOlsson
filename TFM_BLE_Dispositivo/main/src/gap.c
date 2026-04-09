@@ -1,16 +1,18 @@
 #include "gap.h"
-#include "common.h"
+#include "sys_config.h" 
 #include "gatt_svc.h"
 #include "host/ble_hs.h"
 #include "host/util/util.h"
 #include "nimble/ble.h"
 #include "nimble/hci_common.h"
 #include "host/ble_gap.h"
+#include "esp_log.h"
+#include "services/gap/ble_svc_gap.h"
 
 /* Variables globales */
 static uint8_t own_addr_type; /* Tipo de dirección del dispositivo */
-//static bool session_locked = false; /* Flag para saber si ya estamos conectados a un dispositivo */  
 static int active_connections = 0;
+static bool is_single_link_mode = true;
 
 /* --------------------------------- CÓDIGO PRIVADO --------------------------------------- */
 
@@ -21,7 +23,8 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
     
     int rc;
     struct ble_gap_conn_desc desc;
-    struct ble_gap_upd_params params = {0}; /* Variable para los parámetros de velocidad */
+    struct ble_gap_upd_params params = {0}; 
+    int limite;
 
     switch (event->type) {
         
@@ -30,7 +33,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
                 active_connections++; 
                 
                 /* Switch = 1 (Single). Switch = 0 (Multi) */
-                int limite = is_single_link_mode ? 1 : MAX_CONNECTIONS;
+                limite = is_single_link_mode ? 1 : MAX_CONNECTIONS;
 
                 /* Si aún caben más, seguimos anunciando */
                 if (active_connections < limite) {
@@ -38,12 +41,11 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
                 }
                 /* Si llegamos al límite, no hacemos nada y el anuncio se detiene solo */
 
-                /* Petición de modo rápido */
                 /* Petición de modo equilibrado (despierta cada ~100ms) */
-                params.itvl_min = 80;   /* 100 ms (80 * 1.25) */
-                params.itvl_max = 160;  /* 200 ms (160 * 1.25) */
+                params.itvl_min = BLE_CONN_ITVL_MIN;
+                params.itvl_max = BLE_CONN_ITVL_MAX;
                 params.latency = 0;
-                params.supervision_timeout = 200; /* 2 segundos (200 * 10ms) */
+                params.supervision_timeout = BLE_CONN_TIMEOUT;
                 
                 rc = ble_gap_update_params(event->connect.conn_handle, &params);
                 if (rc != 0) {
@@ -121,8 +123,8 @@ static void start_advertising(void) {
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
     /* Cada cuánto se realiza el anuncio */
-    adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(500);
-    adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(510);
+    adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(BLE_ADV_ITVL_MIN_MS);
+    adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(BLE_ADV_ITVL_MAX_MS);
 
     adv_params.filter_policy = BLE_HCI_ADV_FILT_NONE;
 
@@ -153,9 +155,11 @@ void adv_init(void) {
 }
 
 /* Inicializa el GAP */
-int gap_init(void) {
+int gap_init(bool single_link_mode) {
 
     int rc = 0; 
+
+    is_single_link_mode = single_link_mode;
 
     /* Inicializar el servicio GAP */
     ble_svc_gap_init();

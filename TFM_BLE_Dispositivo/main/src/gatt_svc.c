@@ -1,8 +1,7 @@
 #include "gatt_svc.h"
-#include "common.h"
-#include "accel.h" 
+#include "sys_config.h"
 #include "freertos/semphr.h"
-#include "battery.h"
+#include "esp_log.h"
 
 /* Mutex */
 static SemaphoreHandle_t conn_mutex = NULL;
@@ -12,11 +11,15 @@ static uint16_t conn_handles[MAX_CONNECTIONS];
 static bool conn_slots[MAX_CONNECTIONS] = {0}; /* false = libre, true = ocupado */
 static int active_subscribers_count = 0;
 
+/* Variables para almacenar los callbacks inyectados */
+static batt_read_cb_t get_battery_level_internal = NULL;
+static accel_read_cb_t get_accel_sample_internal = NULL;
+static on_first_subscribe_cb_t on_subscribe_internal = NULL;
+
+/* UUIDs para los servicios y características */
 static const ble_uuid16_t accel_svc_uuid = BLE_UUID16_INIT(0x00FF); /* UUID del servicio del acelerometro */
 static const ble_uuid16_t accel_chr_uuid = BLE_UUID16_INIT(0xFF01); /* UUID de la característica del acelerometro */
 static uint16_t accel_chr_val_handle; /* Identificador de la caracteristica de acelerometro */
-
-/* UUIDs estándar de Bluetooth SIG para Batería */
 static const ble_uuid16_t batt_svc_uuid = BLE_UUID16_INIT(0x180F);
 static const ble_uuid16_t batt_chr_uuid = BLE_UUID16_INIT(0x2A19);
 static uint16_t batt_chr_val_handle;
@@ -92,68 +95,57 @@ static void remove_subscriber(uint16_t conn_handle) {
 }
 
 /* Callback de acceso único a la característica */
-/*Argumentos: Quien pregunta, que caracteristica pide, donde se devuelve el dato*/
-static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle,
-                            struct ble_gatt_access_ctxt *ctxt, void *arg) {
-    
-    accel_raw_t single_data;
+static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    accel_raw_t single_data = {0,0,0};
     int rc;
-
-    // Si se intenta LEER (Read Request)
+    
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        if (attr_handle == accel_chr_val_handle) { /* Se mira si se piden los datos del acelerometro */
-            /* Devolvemos solo la ultima muestra */
-            single_data = accel_get_last_sample();
-            /* Se mete el dato dentro de "ble_gatt_access_ctxt" */
+        if (attr_handle == accel_chr_val_handle) { 
+            // Inyección por referencia
+            if (get_accel_sample_internal) {
+                get_accel_sample_internal(&single_data);
+            }
             rc = os_mbuf_append(ctxt->om, &single_data, sizeof(single_data));
-            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES; /* Error si hay fallo en empaquetado */
+            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES; 
         }
     }
-
-    /* Si se intenta escribir, que no lo hemos habilitado, el if es falso y devolvemos error */
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-static int batt_chr_access(uint16_t conn_handle, uint16_t attr_handle,
-                           struct ble_gatt_access_ctxt *ctxt, void *arg) {
+static int batt_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    uint8_t batt_level = 0;
+    int rc;
+
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         if (attr_handle == batt_chr_val_handle) {
-            uint8_t batt_level = battery_get_level();
-            int rc = os_mbuf_append(ctxt->om, &batt_level, sizeof(batt_level));
+            if (get_battery_level_internal) {
+                batt_level = get_battery_level_internal();
+            }
+            rc = os_mbuf_append(ctxt->om, &batt_level, sizeof(batt_level));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
     }
     return BLE_ATT_ERR_UNLIKELY;
 }
 
-/* ----------------- FUNCIONES PÚBLICAS --------------------- */
-
 /* Función de envío de Bloques */
-void send_accel_batch(void) {
-    accel_packet_t *batch;
+void send_accel_batch(accel_packet_t *batch) {
     struct os_mbuf *om;
 
     if (xSemaphoreTake(conn_mutex, portMAX_DELAY) == pdTRUE) {
-        
-        if (active_subscribers_count == 0) {
-            accel_get_batch(); 
+        if (active_subscribers_count == 0 || batch == NULL) {
             xSemaphoreGive(conn_mutex);
             return;
         }
         
-        batch = accel_get_batch();
-
         for (int i=0; i<MAX_CONNECTIONS; i++) {
             if (conn_slots[i]) {
                 om = ble_hs_mbuf_from_flat(batch, sizeof(accel_packet_t));
-                
-                /* Prevención de Out of Memory */
-                if (om == NULL) {
-                    ESP_LOGW("GATT", "Pool de mbufs agotado. Paquete descartado para conn %d", conn_handles[i]);
-                    continue; 
-                }
-
-                ble_gatts_notify_custom(conn_handles[i], accel_chr_val_handle, om);
+                if (om != NULL) {
+                    ble_gatts_notify_custom(conn_handles[i], accel_chr_val_handle, om);
+                } else {
+                    ESP_LOGW("GATT", "Pool mbufs agotado.");
+                }       
             }
         }
         xSemaphoreGive(conn_mutex);
@@ -165,7 +157,10 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
     if (event->subscribe.attr_handle == accel_chr_val_handle) {
         if (event->subscribe.cur_notify > 0) {
             if (active_subscribers_count == 0) {
-                accel_reset_counters();
+                /* Llamamos al callback inyectado en lugar de usar la dependencia directa */
+                if (on_subscribe_internal != NULL) {
+                    on_subscribe_internal();
+                }
             }
             add_subscriber(event->subscribe.conn_handle);
         } else {
@@ -175,18 +170,19 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
 }
 
 /* Inicializacion del servicio */
-int gatt_svc_init(void) {
-    
+int gatt_svc_init(batt_read_cb_t batt_cb, accel_read_cb_t accel_cb, on_first_subscribe_cb_t sub_cb) {
     int rc;
+    get_battery_level_internal = batt_cb;
+    get_accel_sample_internal = accel_cb;
+    on_subscribe_internal = sub_cb;
 
-    /* Mutex para proteger arrays de conexión */
     conn_mutex = xSemaphoreCreateMutex();
     if (conn_mutex == NULL) { return BLE_HS_ENOMEM; }
 
-    ble_svc_gatt_init(); /*Inicializa el servicio GATT (obligatorio por estandar)*/
-    rc = ble_gatts_count_cfg(gatt_svr_svcs); /*Contamos los servicios (seguridad)*/
+    ble_svc_gatt_init(); 
+    rc = ble_gatts_count_cfg(gatt_svr_svcs); 
     if (rc != 0) return rc;
-    rc = ble_gatts_add_svcs(gatt_svr_svcs); /*Agregamos los servicios definidos*/
+    rc = ble_gatts_add_svcs(gatt_svr_svcs); 
     if (rc != 0) return rc;
     return 0;
 }
