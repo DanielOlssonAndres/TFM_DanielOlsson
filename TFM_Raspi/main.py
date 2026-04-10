@@ -1,255 +1,188 @@
+# main.py
 import asyncio
-import signal
-import sys
 import os
+from config import SystemConfig
 from modules.ble_manager import BLEManager
 from modules.ai_handler import AIManager
+from modules.ui_console import ConsoleUI
 
-ai_system = None # Variable global para instanciar la IA dinámicamente
+class AppController:
+    def __init__(self):
+        self.config = SystemConfig()
+        self.ble = BLEManager(self.config, data_callback=self.data_router)
+        self.ai_system = None
 
-# Funciones auxiliares
+    def data_router(self, mac, alias, samples, timestamp):
+        if self.ai_system and self.ai_system.is_active:
+            self.ai_system.process_incoming_data(mac, alias, samples, timestamp)
 
-# Función para enviar los datos solo si la IA está iniciada
-def data_router(mac, alias, samples, timestamp):
-    if ai_system and ai_system.is_active:
-        ai_system.process_incoming_data(mac, alias, samples, timestamp)
-
-async def seleccionar_posicion():
-    opciones_validas = {
-        "1": "Mano_Izquierda", "2": "Mano_Derecha",
-        "3": "Tobillo_Izquierdo", "4": "Tobillo_Derecho",
-        "5": "Cadera_Izquierda", "6": "Cadera_Derecha",
-        "7": "Personalizado"
-    }
-
-    while True:
-        print("\n--- Seleccione posición del dispositivo ---")
-        for k, v in opciones_validas.items():
-            print(f"{k}. {v.replace('_', ' ')}")
+    async def handle_registration(self):
+        ConsoleUI.show_info("Buscando dispositivos cercanos...")
+        candidates = await self.ble.scan_available()
         
-        eleccion = await asyncio.to_thread(input, "\nElija una opción: ")
-        eleccion = eleccion.strip()
+        valid_candidates = [d for d in candidates if d.name and d.name.startswith("D2526") and d.address not in self.ble.connected_devices]
 
-        if eleccion in opciones_validas:
-            if eleccion == "7":
-                alias = await asyncio.to_thread(input, "Introduzca el alias personalizado: ")
-                # Reemplazamos espacios por barras bajas para mantener consistencia en los nombres
-                return alias.strip().replace(" ", "_")
-            return opciones_validas[eleccion]
+        if not valid_candidates:
+            ConsoleUI.show_info("No se encontraron dispositivos 'D2526' nuevos.")
+            return
+
+        print("\n--- Dispositivos Disponibles ---")
+        for i, d in enumerate(valid_candidates):
+            print(f"[{i}] {d.name} ({d.address})")
         
-        print("ERROR: Opción no válida.")
-
-
-async def main():
-
-    ble = BLEManager(data_callback=data_router)
-
-    # Menu principal
-    while True:
-        # Mostramos lista de conectados
-        devs = ble.connected_devices
-        print("\n" + "="*40)
-        print(f"   Dispositivos Enlazados: {len(devs)}")
-        if not devs:
-            print(" (Ningún dispositivo enlazado)")
-        else:
-            for mac, info in devs.items():
-                print(f" * {info['alias']} [{mac}]")
-        print("="*40)
-
-        print("1. Registrar un nuevo dispositivo")
-        print("2. Comenzar la recepción de datos")
-        print("3. Desconectar dispositivo")
-        print("4. Consultar niveles de batería")
-        print("5. Finalizar programa")
+        sel = await ConsoleUI.get_input(">> Nº disp. (o 'BACK' para volver): ")
+        if sel.strip().upper() == "BACK": return
         
-        choice = await asyncio.to_thread(input, "\n>> Seleccione opción: ")
+        try:
+            idx = int(sel)
+            if 0 <= idx < len(valid_candidates):
+                target = valid_candidates[idx]
+                alias = await ConsoleUI.get_position_alias()
+                await self.ble.connect_and_register(target, alias)
+            else:
+                ConsoleUI.show_error("Número inválido.")
+        except ValueError:
+            ConsoleUI.show_error("Entrada inválida.")
 
-        if choice.strip() == "":
-            # Si el usuario solo dio a Enter, se refresca el menú
-            continue
-        elif choice == "1": # Registrar nuevo dispositivo
-            print("\nBuscando dispositivos cercanos...")
-            candidates = await ble.scan_available()
+    async def handle_ai_start(self):
+        modelos_disponibles = [f.replace('.json', '') for f in os.listdir(self.config.MODELS_DIR) if f.endswith('.json')]
+        if not modelos_disponibles:
+            ConsoleUI.show_error(f"No hay modelos en la carpeta '{self.config.MODELS_DIR}'.")
+            await asyncio.sleep(1)
+            return
             
-            valid_candidates = []
-            for d in candidates:
-                # Que tenga nombre y este sea correcto, que tenga direccion y que no este ya conectado 
-                if d.name and d.name.startswith("D2526") and d.address not in ble.connected_devices:
-                    valid_candidates.append(d)
-
-            if not valid_candidates:
-                print(">> No se encontraron dispositivos 'D2526' nuevos.")
-                continue
-
-            print("\n--- Dispositivos Disponibles ---")
-            for i, d in enumerate(valid_candidates):
-                print(f"[{i}] {d.name} ({d.address})")
+        print("\n--- Modelos Disponibles ---")
+        for i, mod in enumerate(modelos_disponibles):
+            print(f"[{i}] {mod}")
             
-            sel = await asyncio.to_thread(input, ">> Nº disp. (o 'BACK' para volver): ")
-            if sel.strip().upper() == "BACK":
-                continue
-            
-            try:
-                idx = int(sel)
-                if 0 <= idx < len(valid_candidates):
-                    target = valid_candidates[idx]
-                    alias = await seleccionar_posicion()
-                    
-                    # Proceso de conexión
-                    await ble.connect_and_register(target, alias)
-                else:
-                    print(">> Número inválido.")
-            except ValueError:
-                print(">> Entrada inválida.")
-
-        elif choice == "2": # Iniciar recepción de datos
-            # Buscar modelos en la carpeta
-            modelos_disponibles = [f.replace('.json', '') for f in os.listdir("models") if f.endswith('.json')]
-            if not modelos_disponibles:
-                print(">> [ERROR] No hay modelos en la carpeta 'models'.")
-                await asyncio.sleep(1)
-                continue
-                
-            print("\n--- Modelos Disponibles ---")
-            for i, mod in enumerate(modelos_disponibles):
-                print(f"[{i}] {mod}")
-                
-            sel_mod = await asyncio.to_thread(input, ">> Seleccione modelo (o 'BACK'): ")
-            if sel_mod.strip().upper() == "BACK": continue
-            
-            try:
-                modelo_elegido = modelos_disponibles[int(sel_mod)]
-            except (ValueError, IndexError):
-                print(">> Selección inválida.")
-                continue
-                
-            # Validar y cargar configuración del modelo
-            config_path = os.path.join("model_configurations", f"{modelo_elegido}.txt")
-            if not os.path.exists(config_path):
-                print(f">> [ERROR] Falta el fichero de configuración: {config_path}")
-                await asyncio.sleep(2)
-                continue
-            
-            req_devs = []
-            clases_finales = []
-            try:
-                with open(config_path, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith("DEVICES:"):
-                            req_devs = [d.strip() for d in line.split("DEVICES:")[1].split(",")]
-                        elif line.startswith("CLASSES:"):
-                            clases_finales = [c.strip() for c in line.split("CLASSES:")[1].split(",")]
-            except Exception as e:
-                print(f">> [ERROR] Fallo crítico al leer {config_path}: {e}")
-                continue
-            
-            if not req_devs or not clases_finales:
-                print(">> [ERROR] El fichero de configuración está mal formateado o incompleto.")
-                await asyncio.sleep(2)
-                continue
-
-            # Validar si los dispositivos conectados tienen los alias requeridos
-            connected_aliases = [info['alias'] for info in ble.connected_devices.values()]
-            faltan = [d for d in req_devs if d not in connected_aliases]
-            
-            if faltan:
-                print("\n>> [ERROR] Los alias de los dispositivos conectados no coinciden con el modelo.")
-                print(f"   Requeridos por config: {req_devs}")
-                print(f"   Conectados actualmente: {connected_aliases}")
-                print(f"   Faltan: {faltan}")
-                await asyncio.sleep(3)
-                continue
-
-            print(f"\n>> Configuración cargada correctamente.")
-            print(f"   Clases a predecir: {clases_finales}")
-
-            # Ordenar las MACs según el orden exacto del fichero de configuración
-            mac_order = []
-            for req in req_devs:
-                for mac, info in ble.connected_devices.items():
-                    if info['alias'] == req and mac not in mac_order:
-                        mac_order.append(mac)
-                        break
-
-            # Instanciar y arrancar IA
-            global ai_system
-            print(f"\n>> Cargando modelo '{modelo_elegido}' en memoria (esto puede tardar unos segundos)...")            
-            ai_system = await asyncio.to_thread(AIManager, modelo_elegido, clases_finales, mac_order)
-            
-            print("\n>> INICIANDO SISTEMA DE RECONOCIMIENTO MULTI-SENSOR")
-            print(">> Pulse ENTER para detener y volver al menú.\n")
-            
-            try:
-                await ble.start_listening()
-                ai_system.start_prediction()
-                await asyncio.to_thread(input)
-            finally:
-                ai_system.stop_prediction()
-                await ble.stop_listening()
-
-        elif choice == "3": # Desconectar dispositivo 
-            if not ble.connected_devices:
-                print(">> No hay dispositivos conectados para eliminar.")
-                await asyncio.sleep(1)
-                continue
-
-            print("\n--- Seleccione dispositivo a desconectar ---")
-            
-            # Convertimos las claves (MACs) a una lista para poder usar índices
-            mac_list = list(ble.connected_devices.keys())
-            
-            for i, mac in enumerate(mac_list):
-                alias = ble.connected_devices[mac]['alias']
-                print(f"[{i}] {alias} ({mac})")
-            
-            sel = await asyncio.to_thread(input, ">> Nº disp. (o 'BACK' para volver): ")
-            
-            if sel.strip().upper() == "BACK":
-                continue
-            
-            try:
-                idx = int(sel)
-                if 0 <= idx < len(mac_list):
-                    target_mac = mac_list[idx]
-                    await ble.disconnect_device(target_mac)
-                    await asyncio.sleep(1) 
-                else:
-                    print(">> Número inválido.")
-            except ValueError:
-                print(">> Entrada inválida. Introduzca el número del índice.")
-
-        elif choice == "4": 
-            if not ble.connected_devices:
-                print(">> No hay dispositivos conectados.")
-                await asyncio.sleep(1)
-                continue
-
-            print("\n--- Nivel de Batería ---")
-            for mac, info in ble.connected_devices.items():
-                alias = info['alias']
-                nivel = await ble.read_battery_level(mac)
-                
-                if nivel is not None:
-                    print(f" * {alias} ({mac}): {nivel}%")
-                else:
-                    print(f" * {alias} ({mac}): ERROR DE LECTURA")
-                    
-            await asyncio.to_thread(input, "\nPulse ENTER para continuar...")
-
-        elif choice == "5": # Finalizar programa
-            break
+        sel_mod = await ConsoleUI.get_input(">> Seleccione modelo (o 'BACK'): ")
+        if sel_mod.strip().upper() == "BACK": return
         
-        else:
-            print("Opción no válida.")
+        try:
+            modelo_elegido = modelos_disponibles[int(sel_mod)]
+        except (ValueError, IndexError):
+            ConsoleUI.show_error("Selección inválida.")
+            return
+            
+        config_path = os.path.join(self.config.MODEL_CONFIGS_DIR, f"{modelo_elegido}.txt")
+        if not os.path.exists(config_path):
+            ConsoleUI.show_error(f"Falta el fichero de configuración: {config_path}")
+            await asyncio.sleep(2)
+            return
+        
+        req_devs, clases_finales = [], []
+        try:
+            with open(config_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("DEVICES:"):
+                        req_devs = [d.strip() for d in line.split("DEVICES:")[1].split(",")]
+                    elif line.startswith("CLASSES:"):
+                        clases_finales = [c.strip() for c in line.split("CLASSES:")[1].split(",")]
+        except Exception as e:
+            ConsoleUI.show_error(f"Fallo crítico al leer {config_path}: {e}")
+            return
+        
+        if not req_devs or not clases_finales:
+            ConsoleUI.show_error("El fichero de configuración está mal formateado o incompleto.")
+            await asyncio.sleep(2)
+            return
 
-    # Salida limpia
-    await ble.disconnect_all()
-    print("Sistema apagado.")
+        connected_aliases = [info['alias'] for info in list(self.ble.connected_devices.values())]        faltan = [d for d in req_devs if d not in connected_aliases]
+        
+        if faltan:
+            ConsoleUI.show_error(f"Los alias conectados no coinciden con el modelo.\nRequeridos: {req_devs}\nFaltan: {faltan}")
+            await asyncio.sleep(3)
+            return
+
+        ConsoleUI.show_info("Configuración cargada correctamente.")
+        
+        mac_order = []
+        for req in req_devs:
+            for mac, info in list(self.ble.connected_devices.items()): 
+                if info['alias'] == req and mac not in mac_order:
+                    mac_order.append(mac)
+                    break
+
+        ConsoleUI.show_info(f"Cargando modelo '{modelo_elegido}'...")            
+        self.ai_system = AIManager(modelo_elegido, clases_finales, mac_order, self.config)
+        
+        ConsoleUI.show_info("INICIANDO SISTEMA DE RECONOCIMIENTO MULTI-SENSOR")
+        await ConsoleUI.get_input(">> Pulse ENTER para detener y volver al menú.\n")
+        
+        try:
+            await self.ble.start_listening()
+            self.ai_system.start_prediction()
+            await ConsoleUI.get_input("") 
+        finally:
+            if self.ai_system:
+                self.ai_system.cleanup() 
+            await self.ble.stop_listening()
+
+    async def handle_disconnection(self):
+        if not self.ble.connected_devices:
+            ConsoleUI.show_info("No hay dispositivos conectados para eliminar.")
+            await asyncio.sleep(1)
+            return
+
+        print("\n--- Seleccione dispositivo a desconectar ---")
+        mac_list = list(self.ble.connected_devices.keys())
+        
+        for i, mac in enumerate(mac_list):
+            alias = self.ble.connected_devices[mac]['alias']
+            print(f"[{i}] {alias} ({mac})")
+        
+        sel = await ConsoleUI.get_input(">> Nº disp. (o 'BACK' para volver): ")
+        if sel.strip().upper() == "BACK": return
+        
+        try:
+            idx = int(sel)
+            if 0 <= idx < len(mac_list):
+                await self.ble.disconnect_device(mac_list[idx])
+                await asyncio.sleep(1) 
+            else:
+                ConsoleUI.show_error("Número inválido.")
+        except ValueError:
+            ConsoleUI.show_error("Entrada inválida.")
+
+    async def handle_battery(self):
+        if not self.ble.connected_devices:
+            ConsoleUI.show_info("No hay dispositivos conectados.")
+            await asyncio.sleep(1)
+            return
+
+        print("\n--- Nivel de Batería ---")
+        for mac, info in self.ble.connected_devices.items():
+            nivel = await self.ble.read_battery_level(mac)
+            estado = f"{nivel}%" if nivel is not None else "ERROR DE LECTURA"
+            print(f" * {info['alias']} ({mac}): {estado}")
+                
+        await ConsoleUI.get_input("\nPulse ENTER para continuar...")
+
+    async def run(self):
+        while True:
+            ConsoleUI.show_main_menu(self.ble.connected_devices, mode="RECONOCIMIENTO")
+            choice = (await ConsoleUI.get_input("\n>> Seleccione opción: ")).strip()
+
+            if choice == "1":
+                await self.handle_registration()
+            elif choice == "2":
+                await self.handle_ai_start()
+            elif choice == "3":
+                await self.handle_disconnection()
+            elif choice == "4":
+                await self.handle_battery()
+            elif choice == "5":
+                break
+            elif choice != "":
+                ConsoleUI.show_error("Opción no válida.")
+
+        await self.ble.disconnect_all()
+        ConsoleUI.show_info("Sistema apagado.")
 
 if __name__ == "__main__":
+    app = AppController()
     try:
-        asyncio.run(main())
+        asyncio.run(app.run())
     except KeyboardInterrupt:
         pass

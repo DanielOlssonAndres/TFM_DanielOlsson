@@ -1,15 +1,11 @@
 import struct # Para desempaquetar datos binarios
 
-# Constante de los dispositivos ESP32. Número de muestras por paquete
-SAMPLES_PER_PACKET = 25
-
 # Función para decodificar un paquete de datos binarios recibido por BLE
-def decode_packet(data):
-    
+def decode_packet(data, samples_per_packet):
     # El paquete debe tener exactamente 158 bytes
     # 4 (seq) + 4 (time) + 25 * (2(x)+2(y)+2(z)) = 158
-    expected_size = 4 + 4 + (SAMPLES_PER_PACKET * 6)
-    
+    expected_size = 4 + 4 + (samples_per_packet * 6)
+
     # Comprobamos el tamaño del paquete (si se perdieron datos por el camino)
     if len(data) != expected_size:
         print(f"Tamaño de paquete incorrecto: Recibido {len(data)}, Esperado {expected_size}")
@@ -35,7 +31,7 @@ def decode_packet(data):
     # 'h' = short (2 bytes con signo)
     sample_format = '<hhh'
     
-    for i in range(SAMPLES_PER_PACKET):
+    for i in range(samples_per_packet):
         start = i * 6
         end = start + 6
         chunk = raw_samples[start:end]

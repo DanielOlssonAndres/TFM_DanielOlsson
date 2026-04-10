@@ -1,21 +1,16 @@
 import numpy as np
 
-WINDOW_SIZE = 200   
-OVERLAP = 150 
-SCALE_FACTOR = 4096.0  # Sensibilidad para ±8g
-
 class SignalBuffer:
-    def __init__(self, window_size=WINDOW_SIZE, overlap=OVERLAP):
-        self.window_size = window_size
-        self.overlap = overlap
-        self.step_size = window_size - overlap
+    def __init__(self, config):
+        self.window_size = config.WINDOW_SIZE
+        self.overlap = config.OVERLAP
+        self.step_size = config.WINDOW_SIZE - config.OVERLAP
+        self.scale_factor = config.SCALE_FACTOR
         
-        # Inicializamos los arrays de X, Y, Z llenos de ceros 
-        self.acc_x = np.zeros(window_size, dtype=np.float64)
-        self.acc_y = np.zeros(window_size, dtype=np.float64)
-        self.acc_z = np.zeros(window_size, dtype=np.float64)
+        self.acc_x = np.zeros(self.window_size, dtype=np.float64)
+        self.acc_y = np.zeros(self.window_size, dtype=np.float64)
+        self.acc_z = np.zeros(self.window_size, dtype=np.float64)
         
-        # Contador para saber cuántas muestras nuevas se han acumulado desde la última predicción
         self.new_samples_count = 0
         self.is_buffer_full = False
 
@@ -26,9 +21,9 @@ class SignalBuffer:
 
         # PREPROCESADO ----------------------------------
         # Extraer los datos y convertirlos a gravedades (g) reales
-        new_x = np.array([s['x'] for s in samples], dtype=np.float64) / SCALE_FACTOR
-        new_y = np.array([s['y'] for s in samples], dtype=np.float64) / SCALE_FACTOR
-        new_z = np.array([s['z'] for s in samples], dtype=np.float64) / SCALE_FACTOR
+        new_x = np.array([s['x'] for s in samples], dtype=np.float64) / self.scale_factor
+        new_y = np.array([s['y'] for s in samples], dtype=np.float64) / self.scale_factor
+        new_z = np.array([s['z'] for s in samples], dtype=np.float64) / self.scale_factor
         # ----------------------------------------------
 
         # Lógica del buffer circular 

@@ -1,0 +1,17 @@
+class SystemConfig:
+    # Señales y Buffer
+    WINDOW_SIZE = 200
+    OVERLAP = 150
+    SCALE_FACTOR = 4096.0
+
+    # Inteligencia Artificial
+    MODELS_DIR = "models/"
+    MODEL_CONFIGS_DIR = "model_configurations/"
+    MAX_PREDICTION_QUEUE_SIZE = 100
+    SYNC_TOLERANCE_MS = 600
+    PACKET_INTERVAL_MS = 500
+
+    # Bluetooth
+    CHARACTERISTIC_UUID = "0000FF01-0000-1000-8000-00805F9B34FB"
+    BATTERY_UUID = "00002A19-0000-1000-8000-00805F9B34FB"
+    SAMPLES_PER_PACKET = 25
