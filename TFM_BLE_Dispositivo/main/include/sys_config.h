@@ -27,7 +27,7 @@
 
 /* --- CONFIGURACIÓN DE BATERÍA (Hardware) --- */
 #define BATT_ADC_UNIT        ADC_UNIT_1
-#define PIN_BATT_ADC         34 /* Canal 6 del ADC1 */
+#define PIN_BATT_ADC         ADC_CHANNEL_6 /* Canal 6 del ADC1 */
 #define BATT_MAX_VOLTAGE_MV  4200
 #define BATT_MIN_VOLTAGE_MV  3300
 #define BATT_UPDATE_MS       10000 /* Lectura cada 10s */

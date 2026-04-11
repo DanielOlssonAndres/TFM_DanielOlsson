@@ -39,7 +39,6 @@ void bsp_init(void) {
 
 bool bsp_read_mode_switch(void) {
     int level = gpio_get_level(PIN_MODE_SWITCH);
-    ESP_LOGI("BSP", "Estado del Switch (GPIO %d): %d", PIN_MODE_SWITCH, level);
     return (level == 1); 
 }
 

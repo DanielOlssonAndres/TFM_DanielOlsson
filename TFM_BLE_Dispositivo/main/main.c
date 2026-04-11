@@ -37,7 +37,7 @@ static void reset_accel_counters_wrapper(void) {
 
 /* Callback que se produce cuando el hardware esta listo */
 static void on_stack_sync(void) {
-    ESP_LOGE("MAIN", "Anuncio iniciado.");
+    ESP_LOGI("MAIN", "Anuncio iniciado.");
     adv_init(); 
 }
 
