@@ -30,8 +30,7 @@ class AppController:
         for i, d in enumerate(valid_candidates):
             print(f"[{i}] {d.name} ({d.address})")
         
-        sel = await ConsoleUI.get_input(">> Nº disp. (o 'BACK' para volver): ")
-        if sel.strip().upper() == "BACK": return
+        sel = await ConsoleUI.get_input(">> Nº dispositivo: ")
         
         try:
             idx = int(sel)
@@ -40,9 +39,11 @@ class AppController:
                 alias = await ConsoleUI.get_position_alias()
                 await self.ble.connect_and_register(target, alias)
             else:
-                ConsoleUI.show_error("Número inválido.")
+                ConsoleUI.show_error("Entrada inválida.")    
+                return    
         except ValueError:
             ConsoleUI.show_error("Entrada inválida.")
+            return
 
     async def handle_ai_start(self):
         modelos_disponibles = [f.replace('.json', '') for f in os.listdir(self.config.MODELS_DIR) if f.endswith('.json')]
@@ -55,8 +56,7 @@ class AppController:
         for i, mod in enumerate(modelos_disponibles):
             print(f"[{i}] {mod}")
             
-        sel_mod = await ConsoleUI.get_input(">> Seleccione modelo (o 'BACK'): ")
-        if sel_mod.strip().upper() == "BACK": return
+        sel_mod = await ConsoleUI.get_input(">> Seleccione modelo: ")
         
         try:
             modelo_elegido = modelos_disponibles[int(sel_mod)]
@@ -88,7 +88,8 @@ class AppController:
             await asyncio.sleep(2)
             return
 
-        connected_aliases = [info['alias'] for info in list(self.ble.connected_devices.values())]        faltan = [d for d in req_devs if d not in connected_aliases]
+        connected_aliases = [info['alias'] for info in list(self.ble.connected_devices.values())]        
+        faltan = [d for d in req_devs if d not in connected_aliases]
         
         if faltan:
             ConsoleUI.show_error(f"Los alias conectados no coinciden con el modelo.\nRequeridos: {req_devs}\nFaltan: {faltan}")
@@ -107,8 +108,8 @@ class AppController:
         ConsoleUI.show_info(f"Cargando modelo '{modelo_elegido}'...")            
         self.ai_system = AIManager(modelo_elegido, clases_finales, mac_order, self.config)
         
-        ConsoleUI.show_info("INICIANDO SISTEMA DE RECONOCIMIENTO MULTI-SENSOR")
-        await ConsoleUI.get_input(">> Pulse ENTER para detener y volver al menú.\n")
+        ConsoleUI.show_info("INICIANDO SISTEMA DE RECONOCIMIENTO")
+        await ConsoleUI.get_input(">> Pulse ENTER para comenzar y detener el sistema.\n")
         
         try:
             await self.ble.start_listening()
@@ -130,20 +131,17 @@ class AppController:
         
         for i, mac in enumerate(mac_list):
             alias = self.ble.connected_devices[mac]['alias']
-            print(f"[{i}] {alias} ({mac})")
+            print(f"[{i}] {self.ble.connected_devices[mac]['name']} -> {self.ble.connected_devices[mac]['alias']} ({mac})")
         
-        sel = await ConsoleUI.get_input(">> Nº disp. (o 'BACK' para volver): ")
-        if sel.strip().upper() == "BACK": return
+        sel = await ConsoleUI.get_input(">> Nº dispositivo: ")
         
         try:
             idx = int(sel)
             if 0 <= idx < len(mac_list):
                 await self.ble.disconnect_device(mac_list[idx])
-                await asyncio.sleep(1) 
-            else:
-                ConsoleUI.show_error("Número inválido.")
         except ValueError:
             ConsoleUI.show_error("Entrada inválida.")
+            return
 
     async def handle_battery(self):
         if not self.ble.connected_devices:
@@ -155,7 +153,7 @@ class AppController:
         for mac, info in self.ble.connected_devices.items():
             nivel = await self.ble.read_battery_level(mac)
             estado = f"{nivel}%" if nivel is not None else "ERROR DE LECTURA"
-            print(f" * {info['alias']} ({mac}): {estado}")
+            print(f" * {info['name']} -> {info['alias']} ({mac}): {estado}")
                 
         await ConsoleUI.get_input("\nPulse ENTER para continuar...")
 

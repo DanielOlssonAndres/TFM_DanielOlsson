@@ -25,8 +25,7 @@ class AppRecorderController:
         for i, d in enumerate(valid_candidates):
             print(f"[{i}] {d.name} ({d.address})")
         
-        sel = await ConsoleUI.get_input(">> Nº disp. (o 'BACK' para volver): ")
-        if sel.strip().upper() == "BACK": return
+        sel = await ConsoleUI.get_input(">> Nº dispositivo: ")
         
         try:
             idx = int(sel)
@@ -34,8 +33,12 @@ class AppRecorderController:
                 target = valid_candidates[idx]
                 alias = await ConsoleUI.get_position_alias()
                 await self.ble.connect_and_register(target, alias)
+            else:
+                ConsoleUI.show_error("Entrada inválida.")    
+                return 
         except ValueError:
             ConsoleUI.show_error("Entrada inválida.")
+            return
 
     async def handle_recording(self):
         if not self.ble.connected_devices:
@@ -139,17 +142,17 @@ class AppRecorderController:
         print("\n--- Seleccione dispositivo a desconectar ---")
         mac_list = list(self.ble.connected_devices.keys())
         for i, mac in enumerate(mac_list):
-            print(f"[{i}] {self.ble.connected_devices[mac]['alias']} ({mac})")
+            print(f"[{i}] {self.ble.connected_devices[mac]['name']} -> {self.ble.connected_devices[mac]['alias']} ({mac})")
         
-        sel = await ConsoleUI.get_input(">> Nº disp. (o 'BACK' para volver): ")
-        if sel.strip().upper() == "BACK": return
+        sel = await ConsoleUI.get_input(">> Nº dispositivo: ")
         
         try:
             idx = int(sel)
             if 0 <= idx < len(mac_list):
                 await self.ble.disconnect_device(mac_list[idx])
         except ValueError:
-            pass
+            ConsoleUI.show_error("Entrada inválida.")
+            return
 
     async def handle_battery(self):
         if not self.ble.connected_devices:
@@ -161,7 +164,7 @@ class AppRecorderController:
         for mac, info in self.ble.connected_devices.items():
             nivel = await self.ble.read_battery_level(mac)
             estado = f"{nivel}%" if nivel is not None else "ERROR DE LECTURA"
-            print(f" * {info['alias']} ({mac}): {estado}")
+            print(f" * {info['name']} -> {info['alias']} ({mac}): {estado}")
                 
         await ConsoleUI.get_input("\nPulse ENTER para continuar...")
 
