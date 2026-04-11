@@ -4,7 +4,7 @@ class ConsoleUI:
     @staticmethod
     def show_main_menu(connected_devices, mode="RECONOCIMIENTO"):
         print("\n" + "="*40)
-        print(f"   [{mode}] Dispositivos Enlazados: {len(connected_devices)}")
+        print(f"[{mode}] Dispositivos Enlazados: {len(connected_devices)}")
         if not connected_devices:
             print(" (Ningún dispositivo enlazado)")
         else:
