@@ -38,7 +38,7 @@ class PacketSequencer:
             self.data_callback(mac, alias, samples, timestamp)
 
     def _reconstruct_packets(self, mac, alias, lost_count, timestamp, n_samples):
-        """Genera paquetes sintéticos planos basados en la media del último paquete válido."""
+        # Genera paquetes sintéticos planos basados en la media del último paquete válido
         last_samples = self.device_states[mac]['last_samples']
         
         avg_x = int(sum(s['x'] for s in last_samples) / n_samples)
@@ -53,6 +53,6 @@ class PacketSequencer:
                 self.data_callback(mac, alias, synthetic_samples, simulated_timestamp)
 
     def remove_device(self, mac):
-        """Limpia el estado de un dispositivo cuando se desconecta."""
+        # Limpia el estado de un dispositivo cuando se desconecta
         if mac in self.device_states:
             del self.device_states[mac]

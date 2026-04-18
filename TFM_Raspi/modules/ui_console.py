@@ -1,6 +1,6 @@
 import asyncio
 
-class ConsoleUI:
+class ConsoleUI:  
     @staticmethod
     def show_main_menu(connected_devices, mode="RECONOCIMIENTO"):
         print("\n" + "="*40)
@@ -24,6 +24,7 @@ class ConsoleUI:
 
     @staticmethod
     async def get_input(prompt):
+        # Mueve la llamada bloqueante a un hilo separado
         return await asyncio.to_thread(input, prompt)
 
     @staticmethod
@@ -49,6 +50,80 @@ class ConsoleUI:
                 return opciones_validas[eleccion]
             
             print("ERROR: Opción no válida.")
+
+
+    @staticmethod
+    async def select_candidate_device(candidates):
+        if not candidates:
+            ConsoleUI.show_info("No se encontraron dispositivos válidos cercanos.")
+            return None
+
+        print("\n--- Dispositivos Disponibles ---")
+        for i, d in enumerate(candidates):
+            print(f"[{i}] {d.name} ({d.address})")
+        
+        sel = await ConsoleUI.get_input(">> Nº dispositivo: ")
+        
+        try:
+            idx = int(sel)
+            if 0 <= idx < len(candidates):
+                return candidates[idx]
+        except ValueError:
+            pass 
+            
+        ConsoleUI.show_error("Entrada inválida.")
+        return None
+
+    @staticmethod
+    async def select_device_to_disconnect(connected_devices):
+        if not connected_devices:
+            ConsoleUI.show_info("No hay dispositivos conectados para eliminar.")
+            return None
+
+        print("\n--- Seleccione dispositivo a desconectar ---")
+        mac_list = list(connected_devices.keys())
+        
+        for i, mac in enumerate(mac_list):
+            alias = connected_devices[mac]['alias']
+            name = connected_devices[mac]['name']
+            print(f"[{i}] {name} -> {alias} ({mac})")
+        
+        sel = await ConsoleUI.get_input(">> Nº dispositivo: ")
+        
+        try:
+            idx = int(sel)
+            if 0 <= idx < len(mac_list):
+                return mac_list[idx]
+        except ValueError:
+            pass
+            
+        ConsoleUI.show_error("Entrada inválida.")
+        return None
+
+    @staticmethod
+    async def select_model_from_list(model_names):
+        if not model_names:
+            ConsoleUI.show_error("No hay modelos disponibles en el directorio.")
+            return None
+
+        print("\n--- Modelos Disponibles ---")
+        for i, mod in enumerate(model_names):
+            print(f"[{i}] {mod}")
+            
+        sel = await ConsoleUI.get_input(">> Seleccione modelo: ")
+        
+        try:
+            return model_names[int(sel)]
+        except (ValueError, IndexError):
+            ConsoleUI.show_error("Selección inválida.")
+            return None
+
+    @staticmethod
+    def show_battery_levels(battery_data):
+        print("\n--- Nivel de Batería ---")
+        for name, alias, mac, nivel in battery_data:
+            estado = f"{nivel}%" if nivel is not None else "ERROR DE LECTURA"
+            print(f" * {name} -> {alias} ({mac}): {estado}")
 
     @staticmethod
     def show_error(msg):

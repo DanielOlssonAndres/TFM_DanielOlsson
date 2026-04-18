@@ -1,4 +1,4 @@
-import struct # Para desempaquetar datos binarios
+import struct 
 
 # Función para decodificar un paquete de datos binarios recibido por BLE
 def decode_packet(data, samples_per_packet):

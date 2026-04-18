@@ -3,7 +3,8 @@
 
 #include <stdbool.h>
 
-void adv_init(void);
 int gap_init(bool single_link_mode); 
+void gap_host_config_init(void);
+void gap_start_host_task(void);
 
 #endif // GAP_SVC_H

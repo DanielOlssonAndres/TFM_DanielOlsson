@@ -4,8 +4,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nimble/nimble_port.h"
-#include "nimble/nimble_port_freertos.h"
-#include "host/ble_hs.h"
 
 #include "sys_config.h"
 #include "bsp.h"
@@ -30,32 +28,6 @@ static void reset_accel_counters_wrapper(void) {
     accel_buffer_reset_counters(my_accel_buffer);
 }
 
-/* --------------------- FUNCIONES NIMBLE ---------------------------*/
-
-/* Callback que se produce cuando el hardware esta listo */
-static void on_stack_sync(void) {
-    ESP_LOGI("MAIN", "Anuncio iniciado.");
-    adv_init(); 
-}
-
-/* Configuracion de NimBLE */
-static void nimble_host_config_init(void) {
-    /* Rellenamos la estructura ble_hs_cfg => Ajustes globales de comportamiento */
-
-    /* Callback a llamar tras iniciar el hardware */
-    ble_hs_cfg.sync_cb = on_stack_sync; 
-    /* IO Capabilities: No tenemos pantalla ni teclado. Modo "Just Works" */
-    ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
-    /* Sin Bonding */
-    ble_hs_cfg.sm_bonding = 0;
-    /* Habilitar Secure Connections */
-    ble_hs_cfg.sm_sc = 1;
-    /* Configuración MITM (Man in the Middle) desactivada para Just Works */
-    ble_hs_cfg.sm_mitm = 0;
-    
-    ble_att_set_preferred_mtu(256); /* Aceptamos paquetes de hasta 256 bytes */
-}
-
 /* --------------------- INTERRUPCIONES ---------------------------*/
 
 /* Rutina de Servicio de Interrupción (ISR) del IMU */
@@ -76,11 +48,6 @@ static void IRAM_ATTR imu_isr_handler(void* arg) {
 }
 
 /* --------------------- TAREAS FREERTOS ---------------------------*/
-
-/* Mantener vivo el sistema Bluetooth*/
-static void nimble_host_task(void *param) {
-    nimble_port_run(); /* Bucle infinito de funcionamiento de Bluetooth */
-}
 
 /* Leer sensor y generar los datos */
 static void accelerometer_task(void *param) {
@@ -153,12 +120,12 @@ void app_main(void) {
 
     /* Inicializar GATT */
     if(gatt_svc_init(bsp_battery_get_level, get_last_accel_sample_wrapper, reset_accel_counters_wrapper) != 0) { bsp_error_check(11); }
-
+    
     /* Configuración NimBLE */
-    nimble_host_config_init();
+    gap_host_config_init();
 
     /* Crear tareas FreeRTOS */
-    xTaskCreate(nimble_host_task, "NimBLE_Host", STACK_SIZE_NIMBLE, NULL, PRIO_NIMBLE_HOST, NULL); 
+    gap_start_host_task(); /* Tarea que mantiene viva la pila BLE */
     xTaskCreate(ble_send_worker_task, "BLE_Send", STACK_SIZE_SEND, NULL, PRIO_BLE_SEND, &ble_send_task_handle); 
     xTaskCreate(accelerometer_task, "Accel_Task", STACK_SIZE_ACCEL, NULL, PRIO_ACCEL_TASK, &accel_task_handle);    
     xTaskCreate(battery_task, "Battery_Task", STACK_SIZE_BATT, NULL, PRIO_BATT_TASK, NULL);

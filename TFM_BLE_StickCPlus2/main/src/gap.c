@@ -8,6 +8,9 @@
 #include "host/ble_gap.h"
 #include "esp_log.h"
 #include "services/gap/ble_svc_gap.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "nimble/nimble_port.h"
 
 /* Variables globales */
 static uint8_t own_addr_type; /* Tipo de dirección del dispositivo */
@@ -139,10 +142,8 @@ static void start_advertising(void) {
                     );
 }
 
-/* ------------------------- FUNCIONES PÚBLICAS ------------------------------- */
-
 /* Inicializa el anuncio */
-void adv_init(void) {
+static void adv_init(void) {
 
     /* Verificar que el dispositivo tenga una dirección BT disponible */
     ble_hs_util_ensure_addr(0);
@@ -152,6 +153,42 @@ void adv_init(void) {
 
     /* Comenzar el anuncio */
     start_advertising();
+}
+
+/* Callback que se produce cuando el hardware está listo */
+static void on_stack_sync(void) {
+    ESP_LOGI("GAP", "Pila sincronizada. Anuncio iniciado.");
+    adv_init(); 
+}
+
+/* Tarea de FreeRTOS para mantener vivo el Bluetooth */
+static void nimble_host_task(void *param) {
+    nimble_port_run(); 
+}
+
+/* ------------------------- FUNCIONES PÚBLICAS ------------------------------- */
+
+/* Configuración de NimBLE */
+void gap_host_config_init(void) {
+    /* Rellenamos la estructura ble_hs_cfg => Ajustes globales de comportamiento */
+
+    /* Callback a llamar tras iniciar el hardware */
+    ble_hs_cfg.sync_cb = on_stack_sync; 
+    /* IO Capabilities: No tenemos pantalla ni teclado. Modo "Just Works" */
+    ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
+    /* Sin Bonding */
+    ble_hs_cfg.sm_bonding = 0;
+    /* Habilitar Secure Connections */
+    ble_hs_cfg.sm_sc = 1;
+    /* Configuración MITM (Man in the Middle) desactivada para Just Works */
+    ble_hs_cfg.sm_mitm = 0;
+    
+    ble_att_set_preferred_mtu(256); /* Aceptamos paquetes de hasta 256 bytes */
+}
+
+/* Lanza la tarea de la pila BLE */
+void gap_start_host_task(void) {
+    xTaskCreate(nimble_host_task, "NimBLE_Host", STACK_SIZE_NIMBLE, NULL, PRIO_NIMBLE_HOST, NULL); 
 }
 
 /* Inicializa el GAP */

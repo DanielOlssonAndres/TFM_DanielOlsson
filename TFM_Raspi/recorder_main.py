@@ -1,48 +1,21 @@
-# recorder_main.py
 import asyncio
 import multiprocessing as mp
 from config import SystemConfig
+from base_controller import BaseController
 from modules.ble_manager import BLEManager
 from modules.data_recorder import DataRecorder
 from modules.ui_console import ConsoleUI
 
-class AppRecorderController:
+class AppRecorderController(BaseController):
     def __init__(self):
         self.config = SystemConfig()
-        # Inyectamos dependencias
         self.recorder = DataRecorder(self.config) 
         self.ble = BLEManager(self.config, data_callback=self.recorder.process_incoming_data)
-
-    async def handle_registration(self):
-        ConsoleUI.show_info("Buscando dispositivos cercanos...")
-        candidates = await self.ble.scan_available()
-        valid_candidates = [d for d in candidates if d.name and d.name.startswith("D2526") and d.address not in self.ble.connected_devices]
-
-        if not valid_candidates:
-            ConsoleUI.show_info("No se encontraron dispositivos 'D2526' nuevos.")
-            return
-
-        for i, d in enumerate(valid_candidates):
-            print(f"[{i}] {d.name} ({d.address})")
-        
-        sel = await ConsoleUI.get_input(">> Nº dispositivo: ")
-        
-        try:
-            idx = int(sel)
-            if 0 <= idx < len(valid_candidates):
-                target = valid_candidates[idx]
-                alias = await ConsoleUI.get_position_alias()
-                await self.ble.connect_and_register(target, alias)
-            else:
-                ConsoleUI.show_error("Entrada inválida.")    
-                return 
-        except ValueError:
-            ConsoleUI.show_error("Entrada inválida.")
-            return
+        super().__init__(self.config, self.ble)
 
     async def handle_recording(self):
         if not self.ble.connected_devices:
-            ConsoleUI.show_error("No hay dispositivos registrados.")
+            ConsoleUI.show_error("No hay dispositivos registrados para grabar.")
             await asyncio.sleep(1)
             return
         
@@ -57,11 +30,12 @@ class AppRecorderController:
             
             num_frames = int(await ConsoleUI.get_input(">> Número de frames (ventanas) por actividad: "))
         except ValueError:
-            ConsoleUI.show_error("Entrada inválida. Debe introducir números.")
+            ConsoleUI.show_error("Entrada inválida. Debe introducir números enteros.")
             return
 
         ConsoleUI.show_info(f"RESUMEN DE LA GRABACIÓN: Gestos: {', '.join(gestures)} | Frames por gesto: {num_frames}")
         
+        # Selección del modo de visualización de energía
         while True:
             print("\n1. Grabar CON visualizador de energía")
             print("2. Grabar SIN visualizador de energía")
@@ -80,6 +54,7 @@ class AppRecorderController:
             else:
                 ConsoleUI.show_error("Opción no válida.")
 
+        # Preparación del entorno de grabación
         self.recorder.clear_memory()
         await self.ble.start_listening()
         
@@ -88,6 +63,7 @@ class AppRecorderController:
 
         mac_list = list(self.ble.connected_devices.keys())
 
+        # Bucle de grabación principal por actividad
         for gesture in gestures:
             await ConsoleUI.get_input(f"\n>> Pulse ENTER para comenzar a grabar '{gesture}'...")
             ConsoleUI.show_info(f"[GRABANDO] Gesto: {gesture} | Esperando {num_frames} frames...")
@@ -96,19 +72,23 @@ class AppRecorderController:
             last_printed = -1
             active_macs = mac_list.copy()
 
+            # Bucle de monitorización 
             while not self.recorder.is_recording_complete(active_macs):
-                await asyncio.sleep(0.1) 
+                await asyncio.sleep(0.1) # Libera CPU
                 
+                # Verifica si se han desconectado nodos
                 for mac in active_macs[:]: 
                     if mac not in self.ble.connected_devices:
                         ConsoleUI.show_error(f"Dispositivo {mac} desconectado. Descartando sus datos...")
                         active_macs.remove(mac)
                         self.recorder.discard_device(mac) 
                 
+                # Si nos quedamos sin hardware en mitad de la toma, abortamos
                 if not active_macs:
                     ConsoleUI.show_error("Todos los dispositivos se desconectaron. Abortando gesto.")
                     break
                 
+                # Actualización de feedback de consola en la misma línea
                 current = self.recorder.get_max_frames_recorded()
                 if current != last_printed and current > 0:
                     print(f"\r   -> Grabados {current}/{num_frames} frames...", end='', flush=True)
@@ -120,9 +100,10 @@ class AppRecorderController:
                 ConsoleUI.show_error("Secuencia de grabación interrumpida por desconexión total.")
                 break 
             
-            print() # Salto de línea tras el \r
+            print() 
             ConsoleUI.show_info(f"[DETENIDO] Grabación de '{gesture}' finalizada.")
         
+        # Limpieza y guardado final
         await self.ble.stop_listening()
         if self.recorder.use_visualizer:
             self.recorder.stop_visualizers()
@@ -131,67 +112,33 @@ class AppRecorderController:
         ConsoleUI.show_info("SECUENCIA FINALIZADA. Archivos guardados:")
         for f in archivos_creados:
             print(f"   - {f}")
+            
         await ConsoleUI.get_input("\nPulse ENTER para volver al menú...")
 
-    async def handle_disconnection(self):
-        if not self.ble.connected_devices:
-            ConsoleUI.show_info("No hay dispositivos conectados para eliminar.")
-            await asyncio.sleep(1)
-            return
-
-        print("\n--- Seleccione dispositivo a desconectar ---")
-        mac_list = list(self.ble.connected_devices.keys())
-        for i, mac in enumerate(mac_list):
-            print(f"[{i}] {self.ble.connected_devices[mac]['name']} -> {self.ble.connected_devices[mac]['alias']} ({mac})")
-        
-        sel = await ConsoleUI.get_input(">> Nº dispositivo: ")
-        
-        try:
-            idx = int(sel)
-            if 0 <= idx < len(mac_list):
-                await self.ble.disconnect_device(mac_list[idx])
-        except ValueError:
-            ConsoleUI.show_error("Entrada inválida.")
-            return
-
-    async def handle_battery(self):
-        if not self.ble.connected_devices:
-            ConsoleUI.show_info("No hay dispositivos conectados.")
-            await asyncio.sleep(1)
-            return
-
-        print("\n--- Nivel de Batería ---")
-        for mac, info in self.ble.connected_devices.items():
-            nivel = await self.ble.read_battery_level(mac)
-            estado = f"{nivel}%" if nivel is not None else "ERROR DE LECTURA"
-            print(f" * {info['name']} -> {info['alias']} ({mac}): {estado}")
-                
-        await ConsoleUI.get_input("\nPulse ENTER para continuar...")
-
     async def run(self):
+        """Máquina de estados del menú de grabación."""
         while True:
-            # Usamos el modo GRABACIÓN que configuramos en ui_console.py
             ConsoleUI.show_main_menu(self.ble.connected_devices, mode="GRABACIÓN")
             choice = (await ConsoleUI.get_input("\n>> Seleccione opción: ")).strip()
 
             if choice == "1":
                 await self.handle_registration()
             elif choice == "2":
-                await self.handle_recording()
+                await self.handle_recording()   
             elif choice == "3":
                 await self.handle_disconnection()
             elif choice == "4":
-                await self.handle_battery()
+                await self.handle_battery()      
             elif choice == "5":
                 break
-            elif choice != "":
+            else:
                 ConsoleUI.show_error("Opción no válida.")
 
         await self.ble.disconnect_all()
         ConsoleUI.show_info("Sistema apagado.")
 
 if __name__ == "__main__":
-    mp.freeze_support() 
+    mp.freeze_support() # Necesario en Windows para Multiprocessing 
     app = AppRecorderController()
     try:
         asyncio.run(app.run())
