@@ -1,4 +1,3 @@
-# modules/ble_manager.py
 import asyncio
 from functools import partial
 from bleak import BleakClient, BleakScanner

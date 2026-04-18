@@ -1,7 +1,7 @@
 import asyncio
 import multiprocessing as mp
 from config import SystemConfig
-from base_controller import BaseController
+from modules.base_controller import BaseController
 from modules.ble_manager import BLEManager
 from modules.data_recorder import DataRecorder
 from modules.ui_console import ConsoleUI

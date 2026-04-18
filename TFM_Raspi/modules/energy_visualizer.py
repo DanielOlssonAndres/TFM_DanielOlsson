@@ -15,7 +15,7 @@ class FiltroExponencial3Ejes:
         self.primera_lectura = True
 
     def filtrar(self, ax, ay, az):
-        a_t = np.array([ax, ay, az]).
+        a_t = np.array([ax, ay, az])
         if self.primera_lectura:
             self.g = a_t
             self.primera_lectura = False

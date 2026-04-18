@@ -1,6 +1,6 @@
 import asyncio
 from config import SystemConfig
-from base_controller import BaseController
+from modules.base_controller import BaseController
 from modules.ble_manager import BLEManager
 from modules.ai_handler import AIManager
 from modules.ui_console import ConsoleUI

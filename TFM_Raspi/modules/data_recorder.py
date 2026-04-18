@@ -1,4 +1,3 @@
-# modules/data_recorder.py
 import os
 import csv
 import numpy as np
