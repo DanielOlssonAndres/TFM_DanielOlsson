@@ -3,8 +3,10 @@
 
 #include "hal/adc_types.h"
 
-/* --- CONFIGURACIÓN GENERAL --- */
-#define DEVICE_NAME "D2526_P1" 
+/* NOMBRE DEL DISPOSITIVO */
+#define DEVICE_NAME "D2526_P1"
+
+/* --- CONFIGURACIÓN GENERAL --- */ 
 #define MAX_CONNECTIONS 4
 #define SAMPLES_PER_PACKET 25 /* Muestras por paquete BLE/IA */
 
@@ -23,7 +25,7 @@
 #define PIN_MODE_SWITCH    13
 #define PIN_LED_GREEN      26
 #define PIN_LED_RED        27
-#define PIN_MPU_INT        25
+#define PIN_IMU_INT        25
 
 /* --- CONFIGURACIÓN DE BATERÍA (Hardware) --- */
 #define BATT_ADC_UNIT        ADC_UNIT_1
@@ -31,6 +33,9 @@
 #define BATT_MAX_VOLTAGE_MV  4200
 #define BATT_MIN_VOLTAGE_MV  3300
 #define BATT_UPDATE_MS       10000 /* Lectura cada 10s */
+#define BATT_ADC_REF_MV      2450  /* Referencia ADC (mv) */
+#define BATT_DIVIDER_RATIO   2     /* Divisor resistivo 1/2 */
+#define BATT_ADC_MAX_RAW     4095  /* Resolución del ADC (12 bits) */
 
 /* --- CONFIGURACIÓN DE BUSES (I2C) --- */
 #define I2C_MASTER_NUM       0
