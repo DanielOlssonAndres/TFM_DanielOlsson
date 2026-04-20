@@ -97,20 +97,30 @@ class AIManager:
             if is_ready:
                 tensor = self.buffers[mac].get_tensor_for_lstm()
                 if tensor is not None:
-                    # Redondeamos el timestamp para crear un "cubo" temporal
-                    # Esto absorbe ligeras derivas de los relojes de los ESP32
-                    quantized_time = int(window_timestamp / self.TIME_TOLERANCE_MS) * self.TIME_TOLERANCE_MS
+                    # Búsqueda de ancla dinámica (Dynamic Clustering)
+                    matched_time = None
+                    for existing_time in list(self.temporal_buffer.keys()):
+                        if abs(existing_time - window_timestamp) <= self.config.WINDOW_TOLERANCE_MS:
+                            matched_time = existing_time
+                            break
                     
-                    if quantized_time not in self.temporal_buffer:
-                        self.temporal_buffer[quantized_time] = {}
+                    # Si no hay grupos cercanos, este paquete es la nueva ancla
+                    if matched_time is None:
+                        matched_time = window_timestamp
+                        self.temporal_buffer[matched_time] = {}
                         
-                    self.temporal_buffer[quantized_time][mac] = tensor
+                    self.temporal_buffer[matched_time][mac] = tensor
 
-                    # Comprobamos si este "cubo" temporal ya tiene los datos de TODOS los sensores
-                    if len(self.temporal_buffer[quantized_time]) == len(self.mac_order):
-                        # Fusión asegurando el orden correcto de las MACs
+                    # Limpieza proactiva de memoria (Evita Memory Leaks por paquetes perdidos)
+                    # Eliminamos cualquier grupo que se haya quedado incompleto y sea más antiguo de 1 segundo
+                    obsolete_keys = [k for k in self.temporal_buffer.keys() if k < (matched_time - 1000)]
+                    for k in obsolete_keys:
+                        del self.temporal_buffer[k]
+
+                    # Comprobación de integridad del tensor
+                    if len(self.temporal_buffer[matched_time]) == len(self.mac_order):
                         combined_tensor = np.concatenate(
-                            [self.temporal_buffer[quantized_time][m] for m in self.mac_order], 
+                            [self.temporal_buffer[matched_time][m] for m in self.mac_order], 
                             axis=2
                         )
                         
@@ -119,10 +129,8 @@ class AIManager:
                         except queue.Full:
                             print("[IA] AVISO: Cola llena. Descartando inferencia.")
                         
-                        # Limpieza de memoria
-                        old_keys = [k for k in self.temporal_buffer.keys() if k <= quantized_time]
-                        for k in old_keys:
-                            del self.temporal_buffer[k]
+                        # Limpieza tras consumo
+                        del self.temporal_buffer[matched_time]
 
     def _prediction_worker(self):
         while True:

@@ -47,8 +47,8 @@
 /* --- CONFIGURACIÓN BLE --- */
 #define BLE_ADV_ITVL_MIN_MS  500
 #define BLE_ADV_ITVL_MAX_MS  510
-#define BLE_CONN_ITVL_MIN    80   /* 100 ms (80 * 1.25) */
-#define BLE_CONN_ITVL_MAX    160  /* 200 ms (160 * 1.25) */
+#define BLE_CONN_ITVL_MIN    12   /* Mínimo 15 ms (12 * 1.25ms) */
+#define BLE_CONN_ITVL_MAX    24  /* Máximo 30 ms (24 * 1.25ms) */
 #define BLE_CONN_TIMEOUT     200  /* 2 segundos (200 * 10ms) */
 
 #endif // SYS_CONFIG_H

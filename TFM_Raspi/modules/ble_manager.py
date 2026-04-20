@@ -19,15 +19,34 @@ class BLEManager:
     async def sync_node_time(self, mac):
         if mac in self.connected_devices:
             client = self.connected_devices[mac]['client']
-            # Obtener tiempo actual en ms
-            now_ms = int(time.time() * 1000)
-            payload = struct.pack("<Q", now_ms)
-        
+            alias = self.connected_devices[mac]['alias']
+            
+            # Tiempo absoluto (para enviar)
+            master_time_ms = int(time.time() * 1000)
+            payload = struct.pack("<Q", master_time_ms)
+            
+            # Reloj de alto rendimiento monotónico (para medir RTT)
+            t_start_perf = time.perf_counter()
+            
             try:
+                # Transmisión bloqueante
                 await client.write_gatt_char(self.config.SYNC_UUID, payload, response=True)
-                print(f"[*] Nodo {mac} sincronizado con éxito.")
+                t_end_perf = time.perf_counter()
+                
+                # Cálculo exacto de la latencia
+                rtt_ms = int((t_end_perf - t_start_perf) * 1000)
+                flight_time_ms = rtt_ms // 2
+                
+                if not hasattr(self, 'rtt_corrections'):
+                    self.rtt_corrections = {}
+                self.rtt_corrections[mac] = flight_time_ms
+                
+                print(f"[*] {alias} sincronizado. RTT: {rtt_ms} ms | Compensación en Raspi: +{flight_time_ms} ms")
             except Exception as e:
                 print(f"[!] Error de sincronización: {e}")
+                if not hasattr(self, 'rtt_corrections'):
+                    self.rtt_corrections = {}
+                self.rtt_corrections[mac] = 0
 
     def _handle_disconnect(self, client):
         # Callback invocado automáticamente por la librería Bleak cuando se pierde la conexión
@@ -55,14 +74,14 @@ class BLEManager:
 
         # Validación de integridad 
         if packet:
+            # Recuperar la compensación calculada para este nodo específico
+            compensacion = getattr(self, 'rtt_corrections', {}).get(mac, 0)
+            
+            # Corregir el retraso introducido por la transmisión Bluetooth
+            packet['timestamp_start'] += compensacion
+            
             if self.sequencer:
-                # Envío al secuenciador para comprobación de contadores
                 self.sequencer.process_packet(mac, alias, packet)
-            else:
-                print(f"[{alias}] Dato recibido (sin procesar)")
-        else:
-            # Descarte de trama corrupta
-            print(f"[{alias}] Error: Paquete corrupto o tamaño inválido.")
 
     async def scan_available(self):
         # Descubrimiento activo de dispositivos  
