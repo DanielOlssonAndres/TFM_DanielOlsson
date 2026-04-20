@@ -4,7 +4,7 @@
 #include "hal/adc_types.h"
 
 /* NOMBRE DEL DISPOSITIVO */
-#define DEVICE_NAME "D2526_P1"
+#define DEVICE_NAME "D2526_P3"
 
 /* --- CONFIGURACIÓN GENERAL --- */ 
 #define MAX_CONNECTIONS 4

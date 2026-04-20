@@ -4,6 +4,8 @@ class SystemConfig:
     OVERLAP = 150
     SCALE_FACTOR = 4096.0
 
+    WINDOW_TOLERANCE_MS = 100
+
     # Inteligencia Artificial
     MODELS_DIR = "models/"
     MODEL_CONFIGS_DIR = "model_configurations/"
@@ -14,4 +16,5 @@ class SystemConfig:
     # Bluetooth
     CHARACTERISTIC_UUID = "0000FF01-0000-1000-8000-00805F9B34FB"
     BATTERY_UUID = "00002A19-0000-1000-8000-00805F9B34FB"
+    SYNC_UUID = "0000FF02-0000-1000-8000-00805F9B34FB"
     SAMPLES_PER_PACKET = 25

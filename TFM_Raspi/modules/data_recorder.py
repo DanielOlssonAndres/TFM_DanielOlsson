@@ -61,8 +61,8 @@ class DataRecorder:
             # Si un sensor va más rápido, deja de grabar al llegar a su objetivo, esperando a los demás
             if self.frames_recorded[mac] < self.target_frames:
                 # Inyección de muestras crudas en el buffer específico del sensor
-                is_ready = self.buffers[mac].add_packet(samples)
-                
+                is_ready, window_time = self.buffers[mac].add_packet(samples, timestamp)
+
                 # Indica que el buffer tiene suficientes datos para extraer una ventana completa
                 if is_ready:
                     # Ensamblaje del tensor 2D 
@@ -75,7 +75,8 @@ class DataRecorder:
                     # Aplanado del tensor para exportación a CSV
                     # Se concatena la etiqueta del gesto al final de la fila.
                     # Formato resultante: [x0, y0, z0, x1, y1, z1 ... xN, yN, zN, "gesto"]
-                    flat_row = list(tensor_2d.flatten()) + [self.current_gesture]
+                    # Insertar el timestamp real de la ventana al principio de la fila
+                    flat_row = [window_time] + list(tensor_2d.flatten()) + [self.current_gesture]
                     
                     if mac not in self.recorded_rows:
                         self.recorded_rows[mac] = []

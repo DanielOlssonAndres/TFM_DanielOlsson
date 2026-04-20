@@ -14,10 +14,16 @@ class SignalBuffer:
         self.new_samples_count = 0
         self.is_buffer_full = False
 
-    def add_packet(self, samples):
+        self.current_window_timestamp = 0
+
+    def add_packet(self, samples, packet_timestamp):
         n_new = len(samples)
         if n_new == 0:
-            return False
+            return False, 0
+
+        # Actualizar el timestamp si estamos empezando un nuevo bloque
+        if self.new_samples_count == 0:
+            self.current_window_timestamp = packet_timestamp
 
         # PREPROCESADO ----------------------------------
         # Extraer los datos y convertirlos a gravedades (g) reales
@@ -44,12 +50,12 @@ class SignalBuffer:
         if not self.is_buffer_full and self.new_samples_count >= self.window_size:
             self.is_buffer_full = True
             self.new_samples_count = 0 # Reset para empezar a contar el step
-            return True # Listo para predecir (primera vez)
+            return True, self.current_window_timestamp # Listo para predecir (primera vez)
 
         # Si ya estaba lleno, verificamos si hemos superado el STEP (Window - Overlap)
         if self.is_buffer_full and self.new_samples_count >= self.step_size:
             self.new_samples_count -= self.step_size
-            return True # Listo para predecir
+            return True, self.current_window_timestamp # Listo para predecir
 
         return False
 

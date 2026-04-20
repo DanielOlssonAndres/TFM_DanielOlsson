@@ -4,7 +4,7 @@
 #include "hal/adc_types.h"
 
 /* NOMBRE DEL DISPOSITIVO */
-#define DEVICE_NAME "D2526_StickC_2" 
+#define DEVICE_NAME "D2526_StickC_4" 
 
 /* --- CONFIGURACIÓN GENERAL --- */
 #define MAX_CONNECTIONS 4

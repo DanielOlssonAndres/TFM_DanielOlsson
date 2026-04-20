@@ -5,6 +5,7 @@ import threading
 from tensorflow.keras.models import model_from_json
 from modules.signal_buffer import SignalBuffer
 import queue
+from config import SystemConfig
 
 class AIManager:
     def __init__(self, model_name, classes, mac_order, config):
@@ -29,6 +30,8 @@ class AIManager:
         # Daemon=True hace que este hilo muera automáticamente si el hilo principal termina
         self.worker_thread = threading.Thread(target=self._prediction_worker, daemon=True)
         self.worker_thread.start()
+        self.temporal_buffer = {} 
+        self.TIME_TOLERANCE_MS = self.config.WINDOW_TOLERANCE_MS
 
     def _load_model(self, model_name):
         json_path = os.path.join(self.config.MODELS_DIR, f"{model_name}.json")
@@ -88,43 +91,38 @@ class AIManager:
             if mac not in self.buffers:
                 self.buffers[mac] = SignalBuffer(self.config)
 
-            # Inyección de las muestras en el buffer 
-            buffer_obj = self.buffers[mac]
-            is_ready = buffer_obj.add_packet(samples)
+            # Extraemos si la ventana está lista y su timestamp global real
+            is_ready, window_timestamp = self.buffers[mac].add_packet(samples, timestamp)
 
-            # Si el buffer ha acumulado suficientes muestras para formar una ventana
             if is_ready:
-                tensor = buffer_obj.get_tensor_for_lstm()
+                tensor = self.buffers[mac].get_tensor_for_lstm()
                 if tensor is not None:
-                    # Se almacena el tensor y su marca temporal de llegada
-                    self.latest_tensors[mac] = tensor
-                    self.latest_timestamps[mac] = timestamp 
+                    # Redondeamos el timestamp para crear un "cubo" temporal
+                    # Esto absorbe ligeras derivas de los relojes de los ESP32
+                    quantized_time = int(window_timestamp / self.TIME_TOLERANCE_MS) * self.TIME_TOLERANCE_MS
                     
-                    # Comprobación de completitud
-                    if all(t is not None for t in self.latest_tensors.values()):
-                        tiempos = [self.latest_timestamps[m] for m in self.mac_order]
-                        diferencia_maxima = max(tiempos) - min(tiempos)
-
-                        # Si la latencia entre la llegada del tensor más antiguo y el más reciente
-                        # supera la tolerancia, los datos no son coherentes temporalmente
-                        if diferencia_maxima > self.config.SYNC_TOLERANCE_MS:
-                            print(f"[IA] AVISO: Desincronización detectada ({diferencia_maxima}ms). Descartando ventana...")
-                            # Se descarta el tensor más antiguo para forzar a esperar la siguiente ventana 
-                            min_mac = self.mac_order[np.argmin(tiempos)]
-                            self.latest_tensors[min_mac] = None
-                            return
+                    if quantized_time not in self.temporal_buffer:
+                        self.temporal_buffer[quantized_time] = {}
                         
-                        # Fusión de tensores 
-                        combined_tensor = np.concatenate([self.latest_tensors[m] for m in self.mac_order], axis=2)
+                    self.temporal_buffer[quantized_time][mac] = tensor
+
+                    # Comprobamos si este "cubo" temporal ya tiene los datos de TODOS los sensores
+                    if len(self.temporal_buffer[quantized_time]) == len(self.mac_order):
+                        # Fusión asegurando el orden correcto de las MACs
+                        combined_tensor = np.concatenate(
+                            [self.temporal_buffer[quantized_time][m] for m in self.mac_order], 
+                            axis=2
+                        )
                         
                         try:
                             self.prediction_queue.put_nowait(combined_tensor)
                         except queue.Full:
-                            # Si la Raspberry no puede inferir tan rápido como llegan los datos por BLE, se descarta el tensor 
-                            print("[IA] AVISO: Cola de predicciones llena. Descartando tensor (posible cuello de botella en inferencia).")
+                            print("[IA] AVISO: Cola llena. Descartando inferencia.")
                         
-                        # Reset de los tensores almacenados tras enviar la matriz fusionada a la cola
-                        self.latest_tensors = {m: None for m in self.mac_order}
+                        # Limpieza de memoria
+                        old_keys = [k for k in self.temporal_buffer.keys() if k <= quantized_time]
+                        for k in old_keys:
+                            del self.temporal_buffer[k]
 
     def _prediction_worker(self):
         while True:

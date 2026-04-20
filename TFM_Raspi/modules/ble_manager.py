@@ -3,6 +3,9 @@ from functools import partial
 from bleak import BleakClient, BleakScanner
 from modules.data_handler import decode_packet
 from modules.packet_sequencer import PacketSequencer
+import struct
+import time
+from config import SystemConfig
 
 class BLEManager:
     def __init__(self, config, data_callback=None):
@@ -12,6 +15,19 @@ class BLEManager:
         # Instancia del escáner BLE para descubrimiento de periféricos
         self.scanner = BleakScanner()
         self.sequencer = PacketSequencer(config, data_callback) if data_callback else None
+
+    async def sync_node_time(self, mac):
+        if mac in self.connected_devices:
+            client = self.connected_devices[mac]['client']
+            # Obtener tiempo actual en ms
+            now_ms = int(time.time() * 1000)
+            payload = struct.pack("<Q", now_ms)
+        
+            try:
+                await client.write_gatt_char(self.config.SYNC_UUID, payload, response=True)
+                print(f"[*] Nodo {mac} sincronizado con éxito.")
+            except Exception as e:
+                print(f"[!] Error de sincronización: {e}")
 
     def _handle_disconnect(self, client):
         # Callback invocado automáticamente por la librería Bleak cuando se pierde la conexión

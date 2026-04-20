@@ -36,10 +36,8 @@ void accel_buffer_process_sample(AccelBufferHandle handle, accel_raw_t sample) {
 
     /* Si es la primera muestra del paquete, genera los metadatos del paquete */
     if (handle->sample_count == 0) {
-        /* Calcula el tiempo transcurrido desde el inicio del sistema/reset */
-        int64_t relative_time = esp_timer_get_time() - handle->start_time_offset;
-        /* Convierte microsegundos a milisegundos y lo asigna al paquete */
-        current_buffer->timestamp_start = (uint32_t)(relative_time / 1000); 
+        /* Guarda estrictamente el TIEMPO LOCAL del ESP32 en milisegundos */
+        current_buffer->timestamp_start = (uint64_t)(esp_timer_get_time() / 1000); 
         current_buffer->sequence_id = handle->global_packet_counter;
     }
 
