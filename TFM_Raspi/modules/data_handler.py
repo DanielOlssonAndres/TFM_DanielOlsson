@@ -2,14 +2,6 @@ import struct
 
 # Función para decodificar un paquete de datos binarios recibido por BLE
 def decode_packet(data, samples_per_packet):
-    # El paquete debe tener exactamente 158 bytes
-    # 4 (seq) + 4 (time) + 25 * (2(x)+2(y)+2(z)) = 158
-    expected_size = 4 + 4 + (samples_per_packet * 6)
-
-    # Comprobamos el tamaño del paquete (si se perdieron datos por el camino)
-    if len(data) != expected_size:
-        print(f"Tamaño de paquete incorrecto: Recibido {len(data)}, Esperado {expected_size}")
-        return None # No se devolve nada si el tamaño es incorrecto
 
     # Desempaquetamiento la Cabecera (8 bytes)
     # '<' = Little Endian (Estándar en ESP32)
@@ -18,6 +10,16 @@ def decode_packet(data, samples_per_packet):
     header_format = '<IQ'
     # Calculo del tamaño de la cabecera
     header_size = struct.calcsize(header_format)
+
+    # El paquete debe tener exactamente 158 bytes
+    # 4 (seq) + 4 (time) + 25 * (2(x)+2(y)+2(z)) = 158
+    expected_size = header_size + (samples_per_packet * 6)
+
+    # Comprobamos el tamaño del paquete (si se perdieron datos por el camino)
+    if len(data) != expected_size:
+        print(f"Tamaño de paquete incorrecto: Recibido {len(data)}, Esperado {expected_size}")
+        return None # No se devolve nada si el tamaño es incorrecto
+
 
     if len(data) < header_size:
         return None, None, []
@@ -52,6 +54,6 @@ def decode_packet(data, samples_per_packet):
     # Se devuelve toda la información del paquete decodificada
     return {
         "sequence_id": sequence_id,
-        "timestamp_start": timestamp,
+        "timestamp_start": timestamp_ms,
         "samples": samples
     }

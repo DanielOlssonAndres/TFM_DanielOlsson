@@ -57,7 +57,7 @@ class SignalBuffer:
             self.new_samples_count -= self.step_size
             return True, self.current_window_timestamp # Listo para predecir
 
-        return False
+        return False, 0
 
     def get_tensor_for_lstm(self):
         try:
