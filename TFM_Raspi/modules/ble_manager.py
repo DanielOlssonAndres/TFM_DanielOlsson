@@ -21,32 +21,22 @@ class BLEManager:
             client = self.connected_devices[mac]['client']
             alias = self.connected_devices[mac]['alias']
             
-            # Tiempo absoluto (para enviar)
             master_time_ms = int(time.time() * 1000)
             payload = struct.pack("<Q", master_time_ms)
             
-            # Reloj de alto rendimiento monotónico (para medir RTT)
             t_start_perf = time.perf_counter()
             
             try:
-                # Transmisión bloqueante
                 await client.write_gatt_char(self.config.SYNC_UUID, payload, response=True)
                 t_end_perf = time.perf_counter()
                 
-                # Cálculo exacto de la latencia
                 rtt_ms = int((t_end_perf - t_start_perf) * 1000)
-                flight_time_ms = rtt_ms // 2
                 
-                if not hasattr(self, 'rtt_corrections'):
-                    self.rtt_corrections = {}
-                self.rtt_corrections[mac] = flight_time_ms
+                # Eliminamos las referencias a rtt_corrections y cambiamos el print
+                print(f"[*] {alias} sincronizado. Latencia de red BLE: {rtt_ms} ms")
                 
-                print(f"[*] {alias} sincronizado. RTT: {rtt_ms} ms | Compensación en Raspi: +{flight_time_ms} ms")
             except Exception as e:
                 print(f"[!] Error de sincronización: {e}")
-                if not hasattr(self, 'rtt_corrections'):
-                    self.rtt_corrections = {}
-                self.rtt_corrections[mac] = 0
 
     def _handle_disconnect(self, client):
         # Callback invocado automáticamente por la librería Bleak cuando se pierde la conexión

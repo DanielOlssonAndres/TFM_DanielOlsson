@@ -170,3 +170,6 @@ class DataRecorder:
                     
                 self.recorded_rows[mac].append(flat_row)
                 self.frames_recorded[mac] += 1
+            
+        if self.use_visualizer:
+            self.visualizer.update(mac, samples)
