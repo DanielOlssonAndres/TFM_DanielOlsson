@@ -33,6 +33,10 @@ class AIManager:
         self.temporal_buffer = {} 
         self.TIME_TOLERANCE_MS = self.config.WINDOW_TOLERANCE_MS
 
+        self.first_timestamps = {}
+        self.alignment_offsets = {}
+        self.is_aligned = False
+
     def _load_model(self, model_name):
         json_path = os.path.join(self.config.MODELS_DIR, f"{model_name}.json")
         weights_path = os.path.join(self.config.MODELS_DIR, f"{model_name}.weights.h5")
@@ -76,6 +80,14 @@ class AIManager:
             self.buffers.clear() 
             self.latest_tensors = {mac: None for mac in self.mac_order}
             self.latest_timestamps = {mac: 0 for mac in self.mac_order}
+            
+            self.first_timestamps.clear()
+            self.alignment_offsets.clear()
+            self.is_aligned = False
+
+            # Pre-buffer para inferencia
+            self.pre_buffer = {mac: [] for mac in self.mac_order}
+
             self.is_active = True
 
     def stop_prediction(self):
@@ -91,41 +103,28 @@ class AIManager:
             if mac not in self.buffers:
                 self.buffers[mac] = SignalBuffer(self.config)
 
-            # Extraemos si la ventana está lista y su timestamp global real
-            is_ready, window_timestamp = self.buffers[mac].add_packet(samples, timestamp)
+            if not self.is_aligned:
+                self.pre_buffer[mac].append((samples, timestamp))
 
-            if is_ready:
-                tensor = self.buffers[mac].get_tensor_for_lstm()
-                if tensor is not None:
-                    # Búsqueda de ancla dinámica (Dynamic Clustering)
-                    grid_size = self.config.PACKET_INTERVAL_MS
-                    matched_time = round(window_timestamp / grid_size) * grid_size
-                    
-                    if matched_time not in self.temporal_buffer:
-                        self.temporal_buffer[matched_time] = {}
+                if mac not in self.first_timestamps:
+                    self.first_timestamps[mac] = timestamp
+                
+                if len(self.first_timestamps) == len(self.mac_order):
+                    tiempo_mas_lento = max(self.first_timestamps.values())
+                    for m, t in self.first_timestamps.items():
+                        desfase_ms = tiempo_mas_lento - t
+                        self.alignment_offsets[m] = int(desfase_ms / 20) 
                         
-                    self.temporal_buffer[matched_time][mac] = tensor
+                    self.is_aligned = True
+                    print(f"\n[IA] Calibración de fase en inferencia completada. Descarte: {self.alignment_offsets}")
 
-                    # Limpieza proactiva de memoria (Evita Memory Leaks por paquetes perdidos)
-                    # Eliminamos cualquier grupo que se haya quedado incompleto y sea más antiguo de 1 segundo
-                    obsolete_keys = [k for k in self.temporal_buffer.keys() if k < (matched_time - 1000)]
-                    for k in obsolete_keys:
-                        del self.temporal_buffer[k]
+                    for m in self.mac_order:
+                        for pkt_samples, pkt_timestamp in self.pre_buffer[m]:
+                            self._process_aligned_packet(m, pkt_samples, pkt_timestamp)
+                    self.pre_buffer.clear()
+                return
 
-                    # Comprobación de integridad del tensor
-                    if len(self.temporal_buffer[matched_time]) == len(self.mac_order):
-                        combined_tensor = np.concatenate(
-                            [self.temporal_buffer[matched_time][m] for m in self.mac_order], 
-                            axis=2
-                        )
-                        
-                        try:
-                            self.prediction_queue.put_nowait(combined_tensor)
-                        except queue.Full:
-                            print("[IA] AVISO: Cola llena. Descartando inferencia.")
-                        
-                        # Limpieza tras consumo
-                        del self.temporal_buffer[matched_time]
+            self._process_aligned_packet(mac, samples, timestamp)
 
     def _prediction_worker(self):
         while True:
@@ -156,3 +155,42 @@ class AIManager:
                 print(f"[IA] Error en inferencia: {e}")
             finally:
                 self.prediction_queue.task_done()
+
+    def _process_aligned_packet(self, mac, samples, timestamp):
+        if self.alignment_offsets.get(mac, 0) > 0:
+            discard_count = min(len(samples), self.alignment_offsets[mac])
+            samples = samples[discard_count:]
+            self.alignment_offsets[mac] -= discard_count
+            
+            if not samples: 
+                return
+
+        is_ready, window_timestamp = self.buffers[mac].add_packet(samples, timestamp)
+
+        if is_ready:
+            tensor = self.buffers[mac].get_tensor_for_lstm()
+            if tensor is not None:
+                grid_size = self.config.PACKET_INTERVAL_MS
+                matched_time = round(window_timestamp / grid_size) * grid_size
+                
+                if matched_time not in self.temporal_buffer:
+                    self.temporal_buffer[matched_time] = {}
+                    
+                self.temporal_buffer[matched_time][mac] = tensor
+
+                obsolete_keys = [k for k in self.temporal_buffer.keys() if k < (matched_time - 1000)]
+                for k in obsolete_keys:
+                    del self.temporal_buffer[k]
+
+                if len(self.temporal_buffer[matched_time]) == len(self.mac_order):
+                    combined_tensor = np.concatenate(
+                        [self.temporal_buffer[matched_time][m] for m in self.mac_order], 
+                        axis=2
+                    )
+                    
+                    try:
+                        self.prediction_queue.put_nowait(combined_tensor)
+                    except queue.Full:
+                        print("[IA] AVISO: Cola llena. Descartando inferencia.")
+                    
+                    del self.temporal_buffer[matched_time]

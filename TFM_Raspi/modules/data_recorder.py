@@ -37,6 +37,8 @@ class DataRecorder:
         self.is_aligned = False
         self.active_macs_list = connected_macs.copy()
         
+        self.pre_buffer = {mac: [] for mac in connected_macs}
+
         # Inicialización de las estructuras de datos para cada sensor conectado
         for mac in connected_macs:
             # Cada sensor requiere su propio buffer circular para aislar los flujos de datos
@@ -67,63 +69,40 @@ class DataRecorder:
     def process_incoming_data(self, mac, alias, samples, timestamp=None):
         if mac not in self.aliases:
             self.aliases[mac] = alias
+
+        if not self.is_recording or mac not in self.buffers:
+            return
+
+        if not self.is_aligned:
+            # Retener los paquetes en el pre-buffer mientras esperamos a los rezagados
+            self.pre_buffer[mac].append((samples, timestamp))
+
+            if mac not in self.first_timestamps:
+                self.first_timestamps[mac] = timestamp
             
-        if self.is_recording and mac in self.buffers:
-
-            if not self.is_aligned:
-                # Registrar el timestamp del primer paquete de cada sensor
-                if mac not in self.first_timestamps:
-                    self.first_timestamps[mac] = timestamp
+            if len(self.first_timestamps) == len(self.active_macs_list):
+                tiempo_mas_lento = max(self.first_timestamps.values())
                 
-                # Cuando tenemos los timestamps de todos, calculamos quién es el más lento
-                if len(self.first_timestamps) == len(self.active_macs_list):
-                    tiempo_mas_lento = max(self.first_timestamps.values())
+                for m, t in self.first_timestamps.items():
+                    desfase_ms = tiempo_mas_lento - t
+                    self.alignment_offsets[m] = int(desfase_ms / 20) 
                     
-                    for m, t in self.first_timestamps.items():
-                        desfase_ms = tiempo_mas_lento - t
-                        # Dividir el desfase entre 20ms (periodo por muestra)
-                        muestras_a_descartar = int(desfase_ms / 20) 
-                        self.alignment_offsets[m] = muestras_a_descartar
-                        
-                    self.is_aligned = True
-                    print(f"\n[*] Calibración de fase completada. Muestras descartadas por sensor: {self.alignment_offsets}")
+                self.is_aligned = True
+                print(f"\n[*] Calibración de fase completada. Descarte: {self.alignment_offsets}")
 
-            # Aplicar el descarte progresivamente hasta consumir el offset de este sensor
-            if self.is_aligned and self.alignment_offsets.get(mac, 0) > 0:
-                discard_count = min(len(samples), self.alignment_offsets[mac])
-                samples = samples[discard_count:] # Recorte del array
-                self.alignment_offsets[mac] -= discard_count
+                # Volcar los pre-buffers aplicando la corrección al principio de los datos
+                for m in self.active_macs_list:
+                    for pkt_samples, pkt_timestamp in self.pre_buffer[m]:
+                        self._process_aligned_packet(m, pkt_samples, pkt_timestamp)
                 
-                # Si el offset era tan grande que se comió todo el paquete, salimos
-                if not samples: 
-                    return
-                
-            # Si un sensor va más rápido, deja de grabar al llegar a su objetivo, esperando a los demás
-            if self.frames_recorded[mac] < self.target_frames:
-                # Inyección de muestras crudas en el buffer específico del sensor
-                is_ready, window_time = self.buffers[mac].add_packet(samples, timestamp)
+                # Liberar memoria del pre-buffer
+                self.pre_buffer.clear()
+            
+            # Bloquear la ejecución normal hasta que la alineación termine
+            return 
 
-                # Indica que el buffer tiene suficientes datos para extraer una ventana completa
-                if is_ready:
-                    # Ensamblaje del tensor 2D 
-                    tensor_2d = np.column_stack((
-                        self.buffers[mac].acc_x, 
-                        self.buffers[mac].acc_y, 
-                        self.buffers[mac].acc_z
-                    ))
-                    
-                    # Aplanado del tensor para exportación a CSV
-                    # Se concatena la etiqueta del gesto al final de la fila.
-                    # Formato resultante: [x0, y0, z0, x1, y1, z1 ... xN, yN, zN, "gesto"]
-                    # Insertar el timestamp real de la ventana al principio de la fila
-                    flat_row = [window_time] + list(tensor_2d.flatten()) + [self.current_gesture]
-                    
-                    if mac not in self.recorded_rows:
-                        self.recorded_rows[mac] = []
-                        
-                    # Almacenamiento en memoria RAM de la fila completada
-                    self.recorded_rows[mac].append(flat_row)
-                    self.frames_recorded[mac] += 1
+        # Ejecución normal cuando el sistema ya está alineado
+        self._process_aligned_packet(mac, samples, timestamp)
 
         if self.use_visualizer:
             self.visualizer.update(mac, samples)
@@ -167,3 +146,31 @@ class DataRecorder:
             saved_files.append(filepath)
         
         return saved_files
+    
+    def _process_aligned_packet(self, mac, samples, timestamp):
+        # Aplicar el descarte progresivamente hasta consumir el offset
+        if self.alignment_offsets.get(mac, 0) > 0:
+            discard_count = min(len(samples), self.alignment_offsets[mac])
+            samples = samples[discard_count:] 
+            self.alignment_offsets[mac] -= discard_count
+            
+            if not samples: 
+                return
+            
+        if self.frames_recorded[mac] < self.target_frames:
+            is_ready, window_time = self.buffers[mac].add_packet(samples, timestamp)
+
+            if is_ready:
+                tensor_2d = np.column_stack((
+                    self.buffers[mac].acc_x, 
+                    self.buffers[mac].acc_y, 
+                    self.buffers[mac].acc_z
+                ))
+                
+                flat_row = [window_time] + list(tensor_2d.flatten()) + [self.current_gesture]
+                
+                if mac not in self.recorded_rows:
+                    self.recorded_rows[mac] = []
+                    
+                self.recorded_rows[mac].append(flat_row)
+                self.frames_recorded[mac] += 1
