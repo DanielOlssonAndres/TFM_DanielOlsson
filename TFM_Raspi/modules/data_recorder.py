@@ -73,36 +73,38 @@ class DataRecorder:
         if not self.is_recording or mac not in self.buffers:
             return
 
+        # Barrera de alineación Real-Time
+        # Esperamos a registrar el primer paquete en vivo de cada nodo
         if not self.is_aligned:
-            # Retener los paquetes en el pre-buffer mientras esperamos a los rezagados
-            self.pre_buffer[mac].append((samples, timestamp))
-
             if mac not in self.first_timestamps:
-                self.first_timestamps[mac] = timestamp
+                self.first_timestamps[mac] = True
             
+            # Una vez todos han reportado, abrimos la compuerta
             if len(self.first_timestamps) == len(self.active_macs_list):
-                tiempo_mas_lento = max(self.first_timestamps.values())
-                
-                for m, t in self.first_timestamps.items():
-                    desfase_ms = tiempo_mas_lento - t
-                    self.alignment_offsets[m] = int(desfase_ms / 20) 
-                    
                 self.is_aligned = True
-                print(f"\n[*] Calibración de fase completada. Descarte: {self.alignment_offsets}")
-
-                # Volcar los pre-buffers aplicando la corrección al principio de los datos
-                for m in self.active_macs_list:
-                    for pkt_samples, pkt_timestamp in self.pre_buffer[m]:
-                        self._process_aligned_packet(m, pkt_samples, pkt_timestamp)
-                
-                # Liberar memoria del pre-buffer
-                self.pre_buffer.clear()
+                print("\n[*] Flujo de datos purgado y sincronizado en tiempo real.")
             
-            # Bloquear la ejecución normal hasta que la alineación termine
+            # Descartamos iterativamente los paquetes que llegan antes de abrir la compuerta
             return 
 
-        # Ejecución normal cuando el sistema ya está alineado
-        self._process_aligned_packet(mac, samples, timestamp)
+        # Ejecución normal directa (ya no hay offsets)
+        if self.frames_recorded[mac] < self.target_frames:
+            is_ready, window_time = self.buffers[mac].add_packet(samples, timestamp)
+
+            if is_ready:
+                tensor_2d = np.column_stack((
+                    self.buffers[mac].acc_x, 
+                    self.buffers[mac].acc_y, 
+                    self.buffers[mac].acc_z
+                ))
+                
+                flat_row = [window_time] + list(tensor_2d.flatten()) + [self.current_gesture]
+                
+                if mac not in self.recorded_rows:
+                    self.recorded_rows[mac] = []
+                    
+                self.recorded_rows[mac].append(flat_row)
+                self.frames_recorded[mac] += 1
 
         if self.use_visualizer:
             self.visualizer.update(mac, samples)

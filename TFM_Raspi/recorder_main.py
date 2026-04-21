@@ -58,6 +58,10 @@ class AppRecorderController(BaseController):
         self.recorder.clear_memory()
         await self.ble.start_listening()
         
+        ConsoleUI.show_info("[!] Purgando colas FIFO de los ESP32...")
+        self.recorder.is_recording = False 
+        await asyncio.sleep(1.5) # 1.5s es suficiente para vaciar cualquier buffer BLE residual
+        
         if self.recorder.use_visualizer:
             self.recorder.start_visualizers(self.ble.connected_devices)
 
