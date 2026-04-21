@@ -10,7 +10,6 @@ class SystemConfig:
     MODELS_DIR = "models/"
     MODEL_CONFIGS_DIR = "model_configurations/"
     MAX_PREDICTION_QUEUE_SIZE = 100
-    SYNC_TOLERANCE_MS = 600
     PACKET_INTERVAL_MS = 500
 
     # Bluetooth

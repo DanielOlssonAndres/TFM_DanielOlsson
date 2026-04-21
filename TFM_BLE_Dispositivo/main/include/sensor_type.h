@@ -12,7 +12,7 @@ typedef struct {
 
 typedef struct __attribute__((packed)) {
     uint32_t sequence_id;
-    uint32_t timestamp_start;
+    uint64_t timestamp_start; 
     accel_raw_t samples[SAMPLES_PER_PACKET]; 
 } accel_packet_t;
 
@@ -26,4 +26,4 @@ struct AccelBufferStruct {
     accel_raw_t last_valid_sample;
 };
 
-#endif 
+#endif

@@ -3,17 +3,17 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/timers.h"
+#include "esp_timer.h" // [CAMBIO] Sustituye a timers.h
 #include "esp_log.h" 
 
 #include "mpu6886.h"
 #include "battery.h"
 
 /* ---------- Simulación de ISR para el StickC-Plus2 ---------- */
-static TimerHandle_t imu_timer = NULL;
+static esp_timer_handle_t imu_timer = NULL; // [CAMBIO] Tipo de handle actualizado
 static void (*imu_isr_proxy)(void*) = NULL;
 
-static void imu_timer_callback(TimerHandle_t xTimer) {
+static void imu_timer_callback(void* arg) { // [CAMBIO] Firma del callback actualizada
     if (imu_isr_proxy) { imu_isr_proxy(NULL); }
 }
 
@@ -111,11 +111,19 @@ void bsp_imu_clear_interrupt(void) {
 }
 
 esp_err_t bsp_imu_register_interrupt(void (*isr_handler)(void*), void* arg) {
-    /* Emulación de interrupción mediante Timer de FreeRTOS */
+    /* [CAMBIO] Emulación de interrupción mediante Timer de Hardware de alta precisión */
     imu_isr_proxy = isr_handler;
-    imu_timer = xTimerCreate("IMU_ISR_SIM", pdMS_TO_TICKS(20), pdTRUE, NULL, imu_timer_callback);
-    if (imu_timer == NULL) return ESP_FAIL;
-    return xTimerStart(imu_timer, 0) == pdPASS ? ESP_OK : ESP_FAIL;
+    
+    const esp_timer_create_args_t timer_args = {
+        .callback = &imu_timer_callback,
+        .name = "IMU_HW_TIMER"
+    };
+    
+    esp_err_t err = esp_timer_create(&timer_args, &imu_timer);
+    if (err != ESP_OK) return err;
+    
+    // 20000 microsegundos = 20 ms = 50Hz exactos independientes del scheduler
+    return esp_timer_start_periodic(imu_timer, 20000); 
 }
 
 void bsp_error_check(int error_code) {

@@ -69,20 +69,3 @@ class PacketSequencer:
     def remove_device(self, mac):
         if mac in self.device_states:
             del self.device_states[mac]
-
-    def _reconstruct_packets(self, mac, alias, lost_count, timestamp, n_samples):
-        # Genera paquetes sintéticos planos basados en la media del último paquete válido
-        last_samples = self.device_states[mac]['last_samples']
-        
-        avg_x = int(sum(s['x'] for s in last_samples) / n_samples)
-        avg_y = int(sum(s['y'] for s in last_samples) / n_samples)
-        avg_z = int(sum(s['z'] for s in last_samples) / n_samples)
-
-        synthetic_samples = [{'x': avg_x, 'y': avg_y, 'z': avg_z} for _ in range(n_samples)]
-
-        if self.data_callback:
-            for i in range(lost_count):
-                simulated_timestamp = timestamp - ((lost_count - i) * self.config.PACKET_INTERVAL_MS)
-                self.data_callback(mac, alias, synthetic_samples, simulated_timestamp)
-
-    
