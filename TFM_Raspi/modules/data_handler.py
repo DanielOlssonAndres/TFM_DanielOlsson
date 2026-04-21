@@ -11,8 +11,6 @@ def decode_packet(data, samples_per_packet):
     # Calculo del tamaño de la cabecera
     header_size = struct.calcsize(header_format)
 
-    # El paquete debe tener exactamente 158 bytes
-    # 4 (seq) + 4 (time) + 25 * (2(x)+2(y)+2(z)) = 158
     expected_size = header_size + (samples_per_packet * 6)
 
     # Comprobamos el tamaño del paquete (si se perdieron datos por el camino)

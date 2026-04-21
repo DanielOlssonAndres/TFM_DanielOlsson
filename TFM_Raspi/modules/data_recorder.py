@@ -16,6 +16,12 @@ class DataRecorder:
         self.recorded_rows = {}     # Almacenamiento temporal de los tensores aplanados
         self.frames_recorded = {}   # Contadores independientes de ventanas completadas por MAC
         
+        # Variables para alineación temporal
+        self.first_timestamps = {}
+        self.alignment_offsets = {}
+        self.is_aligned = False
+        self.active_macs_list = []
+
         # Integración de visualización en tiempo real
         self.use_visualizer = False
         self.visualizer = EnergyVisualizer() 
@@ -25,6 +31,11 @@ class DataRecorder:
         self.current_gesture = gesture
         self.target_frames = target_frames
         self.is_recording = True
+
+        self.first_timestamps.clear()
+        self.alignment_offsets.clear()
+        self.is_aligned = False
+        self.active_macs_list = connected_macs.copy()
         
         # Inicialización de las estructuras de datos para cada sensor conectado
         for mac in connected_macs:
@@ -58,6 +69,35 @@ class DataRecorder:
             self.aliases[mac] = alias
             
         if self.is_recording and mac in self.buffers:
+
+            if not self.is_aligned:
+                # Registrar el timestamp del primer paquete de cada sensor
+                if mac not in self.first_timestamps:
+                    self.first_timestamps[mac] = timestamp
+                
+                # Cuando tenemos los timestamps de todos, calculamos quién es el más lento
+                if len(self.first_timestamps) == len(self.active_macs_list):
+                    tiempo_mas_lento = max(self.first_timestamps.values())
+                    
+                    for m, t in self.first_timestamps.items():
+                        desfase_ms = tiempo_mas_lento - t
+                        # Dividir el desfase entre 20ms (periodo por muestra)
+                        muestras_a_descartar = int(desfase_ms / 20) 
+                        self.alignment_offsets[m] = muestras_a_descartar
+                        
+                    self.is_aligned = True
+                    print(f"\n[*] Calibración de fase completada. Muestras descartadas por sensor: {self.alignment_offsets}")
+
+            # Aplicar el descarte progresivamente hasta consumir el offset de este sensor
+            if self.is_aligned and self.alignment_offsets.get(mac, 0) > 0:
+                discard_count = min(len(samples), self.alignment_offsets[mac])
+                samples = samples[discard_count:] # Recorte del array
+                self.alignment_offsets[mac] -= discard_count
+                
+                # Si el offset era tan grande que se comió todo el paquete, salimos
+                if not samples: 
+                    return
+                
             # Si un sensor va más rápido, deja de grabar al llegar a su objetivo, esperando a los demás
             if self.frames_recorded[mac] < self.target_frames:
                 # Inyección de muestras crudas en el buffer específico del sensor

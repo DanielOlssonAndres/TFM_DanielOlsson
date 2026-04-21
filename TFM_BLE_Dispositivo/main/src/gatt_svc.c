@@ -6,6 +6,7 @@
 /* Mutex para proteger las variables de estado de las conexiones */
 static SemaphoreHandle_t conn_mutex = NULL;
 
+static int64_t conn_time_offsets[MAX_CONNECTIONS] = {0}; /* Almacena el tiempo de conexión para cada cliente, usado para calcular timestamps relativos */
 static uint16_t conn_handles[MAX_CONNECTIONS]; /* Almacena los identificadores de conexión de NimBLE */
 static bool conn_slots[MAX_CONNECTIONS] = {0}; /* Mapa de bits (implementado como array de booleanos) en búsqueda de slots libres*/
 static int active_subscribers_count = 0;
@@ -21,14 +22,17 @@ static const ble_uuid16_t accel_svc_uuid = BLE_UUID16_INIT(0x00FF);
 static const ble_uuid16_t accel_chr_uuid = BLE_UUID16_INIT(0xFF01); 
 static const ble_uuid16_t batt_svc_uuid = BLE_UUID16_INIT(0x180F);
 static const ble_uuid16_t batt_chr_uuid = BLE_UUID16_INIT(0x2A19); 
+static const ble_uuid16_t sync_chr_uuid = BLE_UUID16_INIT(0xFF02);
 
 /* Handles de las características */
 static uint16_t accel_chr_val_handle; 
 static uint16_t batt_chr_val_handle;
+static uint16_t sync_chr_val_handle;
 
 /* Prototipos locales para las funciones de acceso GATT */
 static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 static int batt_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
+static int sync_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 
 /* Tabla de definición del árbol GATT */
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = { 
@@ -44,6 +48,12 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
                 /* NOTIFY: Permite al servidor enviar actualizaciones sin petición del cliente */
                 .flags = BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &accel_chr_val_handle 
+            },
+            {
+                .uuid = &sync_chr_uuid.u,
+                .access_cb = sync_chr_access,
+                .flags = BLE_GATT_CHR_F_WRITE,
+                .val_handle = &sync_chr_val_handle
             },
             { 0 }
         },
@@ -100,6 +110,36 @@ static void remove_subscriber(uint16_t conn_handle) {
     }
 }
 
+/* Callback de escritura. La Raspi envía su tiempo actual */
+static int sync_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    uint64_t master_time_ms;
+    uint64_t local_now;
+    
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        if (os_mbuf_copydata(ctxt->om, 0, sizeof(uint64_t), &master_time_ms) != 0) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+
+        local_now = esp_timer_get_time() / 1000;
+
+        if (xSemaphoreTake(conn_mutex, portMAX_DELAY) == pdTRUE) {
+            for (int i = 0; i < MAX_CONNECTIONS; i++) {
+                if (conn_slots[i] && conn_handles[i] == conn_handle) {
+                    // Offset = Tiempo_Raspi - Tiempo_ESP32
+                    conn_time_offsets[i] = (int64_t)master_time_ms - (int64_t)local_now;
+                    break;
+                }
+            }
+            xSemaphoreGive(conn_mutex);
+        }
+        /* Forzar a que todos los ESP32 vacíen sus buffers y empiecen a capturar la muestra 0 en el mismo instante en el que sincronizan el reloj */
+        if (active_subscribers_count <= 1 && on_subscribe_internal != NULL) {
+            on_subscribe_internal(); 
+        }
+
+        return 0;
+    }
+    return BLE_ATT_ERR_UNLIKELY;
+}
+
 /* Callback ejecutado por la tarea de NimBLE cuando un cliente GATT lee la característica */
 static int accel_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
     accel_raw_t single_data = {0,0,0};
@@ -141,26 +181,15 @@ static int batt_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct bl
 /* Función llamada por la aplicación para hacer un push de un lote de datos a todos los clientes */
 void send_accel_batch(accel_packet_t *batch) {
     struct os_mbuf *om;
-
-    /* Protege el acceso al array de suscriptores */
     if (xSemaphoreTake(conn_mutex, portMAX_DELAY) == pdTRUE) {
-        /* Salida temprana si no hay a quién enviar o los datos son nulos */
-        if (active_subscribers_count == 0 || batch == NULL) {
-            xSemaphoreGive(conn_mutex);
-            return;
-        }
-        
         for (int i=0; i<MAX_CONNECTIONS; i++) {
             if (conn_slots[i]) {
-                /* Asigna un bloque de memoria del pool de NimBLE para la trama */
-                om = ble_hs_mbuf_from_flat(batch, sizeof(accel_packet_t));
-                if (om != NULL) {
-                    /* Envía la notificación. NimBLE liberará el mbuf internamente */
-                    ble_gatts_notify_custom(conn_handles[i], accel_chr_val_handle, om);
-                } else {
-                    /* Falta de memoria en la pila BLE */
-                    ESP_LOGW("GATT", "Pool mbufs agotado.");
-                }       
+                accel_packet_t translated_packet = *batch;
+                // Aplicamos el offset específico de esta conexión
+                translated_packet.timestamp_start = (uint64_t)((int64_t)batch->timestamp_start + conn_time_offsets[i]);
+
+                om = ble_hs_mbuf_from_flat(&translated_packet, sizeof(accel_packet_t));
+                if (om) ble_gatts_notify_custom(conn_handles[i], accel_chr_val_handle, om);
             }
         }
         xSemaphoreGive(conn_mutex);
@@ -172,12 +201,6 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
     if (event->subscribe.attr_handle == accel_chr_val_handle) {
         /* cur_notify > 0 significa que el cliente ha activado las notificaciones */
         if (event->subscribe.cur_notify > 0) {
-            if (active_subscribers_count == 0) {
-                /* Dispara evento de primera suscripción */
-                if (on_subscribe_internal != NULL) {
-                    on_subscribe_internal();
-                }
-            }
             add_subscriber(event->subscribe.conn_handle);
         } else {
             /* El cliente ha desactivado las notificaciones */

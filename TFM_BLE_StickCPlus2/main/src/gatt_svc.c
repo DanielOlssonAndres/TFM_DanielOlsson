@@ -112,11 +112,13 @@ static void remove_subscriber(uint16_t conn_handle) {
 
 /* Callback de escritura. La Raspi envía su tiempo actual */
 static int sync_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    uint64_t master_time_ms;
+    uint64_t local_now;
+    
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        uint64_t master_time_ms;
         if (os_mbuf_copydata(ctxt->om, 0, sizeof(uint64_t), &master_time_ms) != 0) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
 
-        uint64_t local_now = esp_timer_get_time() / 1000;
+        local_now = esp_timer_get_time() / 1000;
 
         if (xSemaphoreTake(conn_mutex, portMAX_DELAY) == pdTRUE) {
             for (int i = 0; i < MAX_CONNECTIONS; i++) {
@@ -128,6 +130,11 @@ static int sync_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct bl
             }
             xSemaphoreGive(conn_mutex);
         }
+        /* Forzar a que todos los ESP32 vacíen sus buffers y empiecen a capturar la muestra 0 en el mismo instante en el que sincronizan el reloj */
+        if (active_subscribers_count <= 1 && on_subscribe_internal != NULL) {
+            on_subscribe_internal(); 
+        }
+
         return 0;
     }
     return BLE_ATT_ERR_UNLIKELY;
@@ -194,12 +201,6 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
     if (event->subscribe.attr_handle == accel_chr_val_handle) {
         /* cur_notify > 0 significa que el cliente ha activado las notificaciones */
         if (event->subscribe.cur_notify > 0) {
-            if (active_subscribers_count == 0) {
-                /* Dispara evento de primera suscripción */
-                if (on_subscribe_internal != NULL) {
-                    on_subscribe_internal();
-                }
-            }
             add_subscriber(event->subscribe.conn_handle);
         } else {
             /* El cliente ha desactivado las notificaciones */

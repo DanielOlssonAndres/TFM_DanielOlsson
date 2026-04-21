@@ -98,15 +98,10 @@ class AIManager:
                 tensor = self.buffers[mac].get_tensor_for_lstm()
                 if tensor is not None:
                     # Búsqueda de ancla dinámica (Dynamic Clustering)
-                    matched_time = None
-                    for existing_time in list(self.temporal_buffer.keys()):
-                        if abs(existing_time - window_timestamp) <= self.config.WINDOW_TOLERANCE_MS:
-                            matched_time = existing_time
-                            break
+                    grid_size = self.config.PACKET_INTERVAL_MS
+                    matched_time = round(window_timestamp / grid_size) * grid_size
                     
-                    # Si no hay grupos cercanos, este paquete es la nueva ancla
-                    if matched_time is None:
-                        matched_time = window_timestamp
+                    if matched_time not in self.temporal_buffer:
                         self.temporal_buffer[matched_time] = {}
                         
                     self.temporal_buffer[matched_time][mac] = tensor
