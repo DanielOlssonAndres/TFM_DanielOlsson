@@ -12,7 +12,6 @@ typedef struct {
 
 typedef struct __attribute__((packed)) {
     uint32_t sequence_id;
-    uint64_t timestamp_start; 
     accel_raw_t samples[SAMPLES_PER_PACKET]; 
 } accel_packet_t;
 
@@ -22,8 +21,6 @@ struct AccelBufferStruct {
     bool batch_ready;
     int sample_count;
     uint32_t global_packet_counter;
-    int64_t start_time_offset;
-    accel_raw_t last_valid_sample;
 };
 
 #endif

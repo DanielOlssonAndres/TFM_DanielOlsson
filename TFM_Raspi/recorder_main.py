@@ -71,10 +71,6 @@ class AppRecorderController(BaseController):
         for gesture in gestures:
             await ConsoleUI.get_input(f"\n>> Pulse ENTER para comenzar a grabar '{gesture}'...")
             ConsoleUI.show_info(f"[GRABANDO] Gesto: {gesture} | Esperando {num_frames} frames...")
-            
-            # Forzar re-sincronización precisa justo antes de la captura
-            for mac in self.ble.connected_devices.keys():
-                await self.ble.sync_node_time(mac)
 
             self.recorder.start_recording(gesture, num_frames, mac_list)
             last_printed = -1

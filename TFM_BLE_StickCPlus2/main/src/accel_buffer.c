@@ -1,16 +1,9 @@
 #include "accel_buffer.h"
-#include "esp_timer.h"
 #include <stdlib.h>
 
 /* Constructor del manejador del buffer */
 AccelBufferHandle accel_buffer_create(void) {
-    /* Utiliza calloc para asegurar que toda la estructura se inicializa a 0 */ 
-    AccelBufferHandle handle = (AccelBufferHandle)calloc(1, sizeof(struct AccelBufferStruct));
-    if (handle) {
-        /* Guarda el tiempo absoluto de inicio (en microsegundos) para calcular timestamps relativos */
-        handle->start_time_offset = esp_timer_get_time();
-    }
-    return handle;
+    return (AccelBufferHandle)calloc(1, sizeof(struct AccelBufferStruct));
 }
 
 /* Destructor. Libera la memoria dinámica asignada */
@@ -25,7 +18,6 @@ void accel_buffer_reset_counters(AccelBufferHandle handle) {
     handle->sample_count = 0;          /* Índice de la muestra actual dentro del buffer */
     handle->write_idx = 0;             /* Índice del buffer activo para escritura (0 o 1) */
     handle->batch_ready = false;       /* Flag de disponibilidad */
-    handle->start_time_offset = esp_timer_get_time();    
 }
 
 void accel_buffer_process_sample(AccelBufferHandle handle, accel_raw_t sample) {
@@ -36,15 +28,12 @@ void accel_buffer_process_sample(AccelBufferHandle handle, accel_raw_t sample) {
 
     /* Si es la primera muestra del paquete, genera los metadatos del paquete */
     if (handle->sample_count == 0) {
-        /* Guarda estrictamente el tiempo local del ESP32 en milisegundos */
-        current_buffer->timestamp_start = (uint64_t)(esp_timer_get_time() / 1000); 
         current_buffer->sequence_id = handle->global_packet_counter;
     }
 
     /* Almacena la muestra en el array del buffer */
     current_buffer->samples[handle->sample_count] = sample;
     /* Actualiza el registro de la última muestra leída */
-    handle->last_valid_sample = sample;
     handle->sample_count++;
 
     /* Verifica si el buffer actual ha alcanzado su capacidad máxima */
@@ -76,7 +65,3 @@ accel_packet_t* accel_buffer_get_batch(AccelBufferHandle handle) {
     return &handle->buffers[!handle->write_idx];
 }
 
-accel_raw_t accel_buffer_get_last_sample(AccelBufferHandle handle) {
-    accel_raw_t empty = {0,0,0};
-    return handle ? handle->last_valid_sample : empty;
-}

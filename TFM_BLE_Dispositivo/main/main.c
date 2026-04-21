@@ -16,18 +16,6 @@ static TaskHandle_t ble_send_task_handle = NULL;
 
 static AccelBufferHandle my_accel_buffer = NULL;
 
-/* --------------------- WRAPPERS PARA GATT -------------------*/
-
-static void get_last_accel_sample_wrapper(accel_raw_t *sample_out) {
-    if (sample_out != NULL) {
-        *sample_out = accel_buffer_get_last_sample(my_accel_buffer);
-    }
-}
-
-static void reset_accel_counters_wrapper(void) {
-    accel_buffer_reset_counters(my_accel_buffer);
-}
-
 /* --------------------- INTERRUPCIONES ---------------------------*/
 
 /* Rutina de Servicio de Interrupción (ISR) del IMU */
@@ -119,8 +107,7 @@ void app_main(void) {
     if(gap_init(bsp_read_mode_switch()) != 0) { bsp_error_check(10); }
 
     /* Inicializar GATT */
-    if(gatt_svc_init(bsp_battery_get_level, get_last_accel_sample_wrapper, reset_accel_counters_wrapper) != 0) { bsp_error_check(11); }
-    
+    if(gatt_svc_init(bsp_battery_get_level) != 0) { bsp_error_check(11); }    
     /* Configuración NimBLE */
     gap_host_config_init();
 

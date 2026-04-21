@@ -6,8 +6,7 @@ def decode_packet(data, samples_per_packet):
     # Desempaquetamiento la Cabecera (8 bytes)
     # '<' = Little Endian (Estándar en ESP32)
     # 'I' = Unsigned Int (4 bytes)
-    # 'Q' = Unsigned Long Long (8 bytes)
-    header_format = '<IQ'
+    header_format = '<I'
     # Calculo del tamaño de la cabecera
     header_size = struct.calcsize(header_format)
 
@@ -20,11 +19,10 @@ def decode_packet(data, samples_per_packet):
 
 
     if len(data) < header_size:
-        return None, None, []
+        return None
     
-    # Obtenemos los valores para el ID de secuencia y timestamp
-    sequence_id, timestamp_ms = struct.unpack(header_format, data[:header_size])
-    # Obtenemos las muetsras de lo que queda del paquete
+    # Obtenemos los valores para el ID de secuencia
+    sequence_id = struct.unpack(header_format, data[:header_size])[0]    
     raw_samples = data[header_size:]
     # Lista para guardar las muestras decodificadas
     samples = []
@@ -43,15 +41,10 @@ def decode_packet(data, samples_per_packet):
         x, y, z = struct.unpack(sample_format, chunk)
         
         # Se meten las muestras en la lista
-        samples.append({
-            "x": x,
-            "y": y,
-            "z": z
-        })
+        samples.append({"x": x, "y": y, "z": z})
 
     # Se devuelve toda la información del paquete decodificada
     return {
         "sequence_id": sequence_id,
-        "timestamp_start": timestamp_ms,
         "samples": samples
     }

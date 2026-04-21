@@ -7,12 +7,9 @@
 #include "host/ble_gap.h"
 #include "sensor_type.h" 
 
-/* Definición de firmas para los callbacks */
 typedef uint8_t (*batt_read_cb_t)(void);
-typedef void (*accel_read_cb_t)(accel_raw_t *sample_out);
-typedef void (*on_first_subscribe_cb_t)(void);
 
-int gatt_svc_init(batt_read_cb_t batt_cb, accel_read_cb_t accel_cb, on_first_subscribe_cb_t sub_cb);
+int gatt_svc_init(batt_read_cb_t batt_cb);
 void send_accel_batch(accel_packet_t *batch);
 void gatt_svr_subscribe_cb(struct ble_gap_event *event);
 

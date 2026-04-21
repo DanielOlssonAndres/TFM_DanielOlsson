@@ -3,7 +3,6 @@ from functools import partial
 from bleak import BleakClient, BleakScanner
 from modules.data_handler import decode_packet
 from modules.packet_sequencer import PacketSequencer
-import struct
 import time
 from config import SystemConfig
 
@@ -15,30 +14,6 @@ class BLEManager:
         # Instancia del escáner BLE para descubrimiento de periféricos
         self.scanner = BleakScanner()
         self.sequencer = PacketSequencer(config, data_callback) if data_callback else None
-
-    async def sync_node_time(self, mac):
-        if mac in self.connected_devices:
-            client = self.connected_devices[mac]['client']
-            alias = self.connected_devices[mac]['alias']
-            
-            master_time_ms = int(time.time() * 1000)
-            payload = struct.pack("<Q", master_time_ms)
-            
-            t_start_perf = time.perf_counter()
-            
-            try:
-                await client.write_gatt_char(self.config.SYNC_UUID, payload, response=True)
-                t_end_perf = time.perf_counter()
-                
-                rtt_ms = int((t_end_perf - t_start_perf) * 1000)
-                flight_time_ms = rtt_ms // 2
-                
-                # Almacenamos el desfase físico de la red para este nodo específico
-                self.connected_devices[mac]['clock_offset'] = flight_time_ms
-                print(f"[*] {alias} RTT medido: {rtt_ms} ms | Offset de capa de red: +{flight_time_ms} ms")
-                
-            except Exception as e:
-                print(f"[!] Error de sincronización: {e}")
 
     def _handle_disconnect(self, client):
         # Callback invocado automáticamente por la librería Bleak cuando se pierde la conexión
@@ -60,16 +35,18 @@ class BLEManager:
         print(">> (Presione Enter para actualizar el menú): ", end="", flush=True)
 
     def _notification_handler(self, alias, mac, sender, data):
+        # Asignamos el tiempo maestro absoluto de la Raspi inmediatamente al recibir el paquete
+        arrival_time_ms = int(time.time() * 1000)
+        
         packet = decode_packet(data, self.config.SAMPLES_PER_PACKET)
 
         if packet:
-            # Convertimos el tiempo local del ESP32 en Tiempo Global Raspberry compensando el tiempo que tardó el paquete de sincronización en llegar
-            offset = self.connected_devices.get(mac, {}).get('clock_offset', 0)
-            packet['timestamp_start'] += offset
+            # Agregamos el timestamp inyectado localmente
+            packet['timestamp_start'] = arrival_time_ms
 
             if self.sequencer:
                 self.sequencer.process_packet(mac, alias, packet)
-
+                
     async def scan_available(self):
         # Descubrimiento activo de dispositivos  
         # Retorna una lista de objetos BLEDevice
