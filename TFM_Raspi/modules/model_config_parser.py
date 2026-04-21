@@ -1,8 +1,7 @@
 import os
 from dataclasses import dataclass
 
-# Usamos dataclass para crear una estructura de datos inmutable y limpia 
-# que contendrá la información extraída de los ficheros .txt
+# Usamos dataclass para crear una estructura de datos que contendrá la información extraída de los ficheros .txt
 @dataclass
 class ModelConfig:
     name: str

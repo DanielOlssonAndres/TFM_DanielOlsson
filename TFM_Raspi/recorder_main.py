@@ -124,7 +124,6 @@ class AppRecorderController(BaseController):
         await ConsoleUI.get_input("\nPulse ENTER para volver al menú...")
 
     async def run(self):
-        """Máquina de estados del menú de grabación."""
         while True:
             ConsoleUI.show_main_menu(self.ble.connected_devices, mode="GRABACIÓN")
             choice = (await ConsoleUI.get_input("\n>> Seleccione opción: ")).strip()

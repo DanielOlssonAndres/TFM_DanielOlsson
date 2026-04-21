@@ -3,13 +3,17 @@
 #include "sys_config.h"
 
 static esp_err_t mpu6886_write_byte(uint8_t reg, uint8_t data) {
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_cmd_handle_t cmd;
+    esp_err_t ret;
+
+    cmd = i2c_cmd_link_create();
+
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (MPU6886_ADDR << 1) | I2C_MASTER_WRITE, true);
     i2c_master_write_byte(cmd, reg, true);
     i2c_master_write_byte(cmd, data, true);
     i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
+    ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
     return ret;
 }
@@ -31,7 +35,10 @@ esp_err_t mpu6886_init(void) {
 /* Lectura de los ejes del acelerómetro */
 esp_err_t mpu6886_read_accel(accel_raw_t *sample) {
     uint8_t raw[6];
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_cmd_handle_t cmd;
+    esp_err_t ret;
+    
+    cmd = i2c_cmd_link_create();
     
     /* Configurar el puntero de registro de lectura en ACCEL_XOUT_H (0x3B) */
     i2c_master_start(cmd);
@@ -50,7 +57,7 @@ esp_err_t mpu6886_read_accel(accel_raw_t *sample) {
     i2c_master_stop(cmd);
     
     /* Ejecutar el comando */
-    esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
+    ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
 
     /* Procesar los datos si la lectura fue exitosa */

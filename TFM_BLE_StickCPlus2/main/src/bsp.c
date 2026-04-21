@@ -10,10 +10,10 @@
 #include "battery.h"
 
 /* ---------- Simulación de ISR para el StickC-Plus2 ---------- */
-static esp_timer_handle_t imu_timer = NULL; // [CAMBIO] Tipo de handle actualizado
+static esp_timer_handle_t imu_timer = NULL; 
 static void (*imu_isr_proxy)(void*) = NULL;
 
-static void imu_timer_callback(void* arg) { // [CAMBIO] Firma del callback actualizada
+static void imu_timer_callback(void* arg) { 
     if (imu_isr_proxy) { imu_isr_proxy(NULL); }
 }
 
@@ -111,7 +111,6 @@ void bsp_imu_clear_interrupt(void) {
 }
 
 esp_err_t bsp_imu_register_interrupt(void (*isr_handler)(void*), void* arg) {
-    /* [CAMBIO] Emulación de interrupción mediante Timer de Hardware de alta precisión */
     imu_isr_proxy = isr_handler;
     
     const esp_timer_create_args_t timer_args = {

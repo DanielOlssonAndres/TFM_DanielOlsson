@@ -2,7 +2,7 @@
 #include "esp_timer.h"
 #include <stdlib.h>
 
-/* Constructor del manejador del buffer. */
+/* Constructor del manejador del buffer */
 AccelBufferHandle accel_buffer_create(void) {
     /* Utiliza calloc para asegurar que toda la estructura se inicializa a 0 */ 
     AccelBufferHandle handle = (AccelBufferHandle)calloc(1, sizeof(struct AccelBufferStruct));
@@ -36,7 +36,7 @@ void accel_buffer_process_sample(AccelBufferHandle handle, accel_raw_t sample) {
 
     /* Si es la primera muestra del paquete, genera los metadatos del paquete */
     if (handle->sample_count == 0) {
-        /* Guarda estrictamente el TIEMPO LOCAL del ESP32 en milisegundos */
+        /* Guarda estrictamente el tiempo local del ESP32 en milisegundos */
         current_buffer->timestamp_start = (uint64_t)(esp_timer_get_time() / 1000); 
         current_buffer->sequence_id = handle->global_packet_counter;
     }

@@ -7,7 +7,6 @@ from modules.ui_console import ConsoleUI
 from modules.model_config_parser import ModelConfigParser
 
 class AppController(BaseController):
-    """Controlador principal enfocado en el Reconocimiento de Actividades (Predicción)."""
     def __init__(self):
         self.config = SystemConfig()
         self.ble = BLEManager(self.config, data_callback=self.data_router)
@@ -69,7 +68,6 @@ class AppController(BaseController):
             await self.ble.stop_listening()
 
     async def run(self):
-        """Máquina de estados del menú de predicción."""
         while True:
             ConsoleUI.show_main_menu(self.ble.connected_devices, mode="RECONOCIMIENTO")
             choice = (await ConsoleUI.get_input("\n>> Seleccione opción: ")).strip()

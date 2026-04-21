@@ -5,7 +5,7 @@
 #include "sys_config.h"
 #include "sensor_type.h"
 
-/* Puntero opaco a la instancia (Multiple-Instance Module) */
+/*Multiple-Instance Module */
 typedef struct AccelBufferStruct* AccelBufferHandle;
 
 /* Funciones de la interfaz */

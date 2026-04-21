@@ -7,7 +7,6 @@
 #include "host/ble_gap.h"
 #include "sensor_type.h" 
 
-/* Definición de firmas para los callbacks */
 typedef uint8_t (*batt_read_cb_t)(void);
 typedef void (*accel_read_cb_t)(accel_raw_t *sample_out);
 typedef void (*on_first_subscribe_cb_t)(void);

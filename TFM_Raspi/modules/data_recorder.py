@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime
 from modules.signal_buffer import SignalBuffer
 from modules.energy_visualizer import EnergyVisualizer
-from modules.time_aligner import TimeGridAligner # Importante: requiere el nuevo módulo
+from modules.time_aligner import TimeGridAligner 
 
 class DataRecorder:
     def __init__(self, config):
@@ -25,13 +25,12 @@ class DataRecorder:
         self.visualizer = EnergyVisualizer() 
 
     def start_recording(self, gesture, target_frames, connected_macs):
-        """Inicializa una sesión de captura con alineación temporal."""
         self.current_gesture = gesture
         self.target_frames = target_frames
         self.is_recording = True
         self.active_macs_list = connected_macs.copy()
         
-        # Instanciamos el alineador. chunk_ms define el tamaño del bloque (500ms)
+        # Instanciamos el alineador. chunk_ms define el tamaño del bloque 
         self.aligner = TimeGridAligner(
             self.active_macs_list, 
             sample_rate=50, 
@@ -47,7 +46,6 @@ class DataRecorder:
         self.is_recording = False
 
     def is_recording_complete(self, active_macs):
-        """Verifica si todos los dispositivos han alcanzado el objetivo de frames."""
         if not active_macs: return True
         if not self.frames_recorded: return False
         return all(self.frames_recorded.get(mac, 0) >= self.target_frames for mac in active_macs)
@@ -68,11 +66,11 @@ class DataRecorder:
         if not self.is_recording or self.aligner is None:
             return
 
-        # 1. Añadimos los paquetes asíncronos al motor de alineación
+        # Añadimos los paquetes 
         self.aligner.add_packet(mac, samples, timestamp)
 
-        # 2. Intentamos extraer un bloque de tiempo (chunk) alineado para todos los sensores
-        # El motor devuelve datos interpolados a la frecuencia ideal (50Hz)
+        # Extraer un bloque de tiempo alineado para todos los sensores
+        # El motor devuelve datos interpolados a la frecuencia ideal 
         aligned_chunk, chunk_time = self.aligner.get_aligned_chunk()
         
         if aligned_chunk:
@@ -82,13 +80,12 @@ class DataRecorder:
                 self._process_aligned_packet(m, ideal_samples, chunk_time)
 
     def _process_aligned_packet(self, mac, samples, timestamp):
-        """Procesa datos que ya vienen garantizados en sincronía temporal."""
         if self.frames_recorded.get(mac, 0) < self.target_frames:
-            # Asegurar existencia de buffer (failsafe)
+            # Asegurar existencia de buffer 
             if mac not in self.buffers:
                 self.buffers[mac] = SignalBuffer(self.config)
                 
-            # Añadir al buffer circular y verificar si hay ventana (window_size) lista
+            # Añadir al buffer circular y verificar si hay ventana lista
             is_ready, window_time = self.buffers[mac].add_packet(samples, timestamp)
 
             if is_ready:
@@ -99,7 +96,7 @@ class DataRecorder:
                     self.buffers[mac].acc_z
                 ))
                 
-                # Timestamp | Datos (aplanados) | Etiqueta Gesto
+                # Timestamp | Datos | Etiqueta Gesto
                 flat_row = [window_time] + list(tensor_2d.flatten()) + [self.current_gesture]
                 
                 if mac not in self.recorded_rows:
@@ -124,7 +121,6 @@ class DataRecorder:
         self.frames_recorded.clear()
 
     def save_data(self, gestures_list, connected_devices):
-        """Exporta los datos acumulados a archivos CSV."""
         os.makedirs("grabaciones", exist_ok=True)
         saved_files = []
         

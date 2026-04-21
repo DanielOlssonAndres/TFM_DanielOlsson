@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from collections import deque
 
 class FiltroExponencial3Ejes:
-    # Filtro IIR (Infinite Impulse Response) paso alto basado en Media Móvil Exponencial (EMA).
+    # Filtro IIR (Infinite Impulse Response) paso alto basado en Media Móvil Exponencial 
     # Se utiliza para aislar la aceleración lineal dinámica, eliminando el componente 
     # continuo (DC) que representa el vector de la gravedad terrestre (1g).
     def __init__(self, alpha=0.9):
@@ -24,7 +24,7 @@ class FiltroExponencial3Ejes:
         # G(t) = alpha * G(t-1) + (1 - alpha) * Acc(t)
         self.g = (self.alpha * self.g) + (1.0 - self.alpha) * a_t
         
-        # Aceleración dinámica (paso alto) = Aceleración total - Gravedad
+        # Aceleración dinámica = Aceleración total - Gravedad
         return a_t - self.g
 
 def plot_worker(queue, alias):
@@ -98,7 +98,7 @@ class EnergyVisualizer:
         self.processes = {}
 
     def start(self, connected_devices):
-        # Prevención de procesos huérfanos: asegura que se limpian ejecuciones previas
+        # Asegura que se limpian ejecuciones previas
         self.stop()
         for mac, info in connected_devices.items():
             q = mp.Queue()
@@ -127,5 +127,4 @@ class EnergyVisualizer:
             try:
                 self.queues[mac].put_nowait(samples)
             except Exception:
-                # Si la tubería está rota o inaccesible, se descarta el paquete de visualización
                 pass

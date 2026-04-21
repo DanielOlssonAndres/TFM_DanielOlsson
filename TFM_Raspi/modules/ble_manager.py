@@ -63,8 +63,7 @@ class BLEManager:
         packet = decode_packet(data, self.config.SAMPLES_PER_PACKET)
 
         if packet:
-            # Corrección Absoluta: Convertimos el tiempo local del ESP32 en Tiempo Global Raspberry
-            # compensando el tiempo que tardó el paquete de sincronización en llegar.
+            # Convertimos el tiempo local del ESP32 en Tiempo Global Raspberry compensando el tiempo que tardó el paquete de sincronización en llegar
             offset = self.connected_devices.get(mac, {}).get('clock_offset', 0)
             packet['timestamp_start'] += offset
 
