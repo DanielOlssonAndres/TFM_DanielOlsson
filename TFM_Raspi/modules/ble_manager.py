@@ -31,9 +31,11 @@ class BLEManager:
                 t_end_perf = time.perf_counter()
                 
                 rtt_ms = int((t_end_perf - t_start_perf) * 1000)
+                flight_time_ms = rtt_ms // 2
                 
-                # Eliminamos las referencias a rtt_corrections y cambiamos el print
-                print(f"[*] {alias} sincronizado. Latencia de red BLE: {rtt_ms} ms")
+                # Almacenamos el desfase físico de la red para este nodo específico
+                self.connected_devices[mac]['clock_offset'] = flight_time_ms
+                print(f"[*] {alias} RTT medido: {rtt_ms} ms | Offset de capa de red: +{flight_time_ms} ms")
                 
             except Exception as e:
                 print(f"[!] Error de sincronización: {e}")
@@ -58,11 +60,14 @@ class BLEManager:
         print(">> (Presione Enter para actualizar el menú): ", end="", flush=True)
 
     def _notification_handler(self, alias, mac, sender, data):
-        # Callback ejecutado cada vez que el periférico envía un paquete 
-        # Conversión del payload binario a una estructura de datos utilizable
         packet = decode_packet(data, self.config.SAMPLES_PER_PACKET)
 
-        if packet:                        
+        if packet:
+            # Corrección Absoluta: Convertimos el tiempo local del ESP32 en Tiempo Global Raspberry
+            # compensando el tiempo que tardó el paquete de sincronización en llegar.
+            offset = self.connected_devices.get(mac, {}).get('clock_offset', 0)
+            packet['timestamp_start'] += offset
+
             if self.sequencer:
                 self.sequencer.process_packet(mac, alias, packet)
 
