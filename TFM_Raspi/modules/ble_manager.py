@@ -72,14 +72,7 @@ class BLEManager:
         # Conversión del payload binario a una estructura de datos utilizable
         packet = decode_packet(data, self.config.SAMPLES_PER_PACKET)
 
-        # Validación de integridad 
-        if packet:
-            # Recuperar la compensación calculada para este nodo específico
-            compensacion = getattr(self, 'rtt_corrections', {}).get(mac, 0)
-            
-            # Corregir el retraso introducido por la transmisión Bluetooth
-            packet['timestamp_start'] += compensacion
-            
+        if packet:                        
             if self.sequencer:
                 self.sequencer.process_packet(mac, alias, packet)
 

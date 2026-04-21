@@ -73,41 +73,31 @@ class DataRecorder:
         if not self.is_recording or mac not in self.buffers:
             return
 
-        # Barrera de alineación Real-Time
-        # Esperamos a registrar el primer paquete en vivo de cada nodo
         if not self.is_aligned:
+            self.pre_buffer[mac].append((samples, timestamp))
+
             if mac not in self.first_timestamps:
-                self.first_timestamps[mac] = True
+                self.first_timestamps[mac] = timestamp
             
-            # Una vez todos han reportado, abrimos la compuerta
             if len(self.first_timestamps) == len(self.active_macs_list):
+                # Usamos los timestamps PUROS del ESP32
+                tiempo_mas_lento = max(self.first_timestamps.values())
+                
+                for m, t in self.first_timestamps.items():
+                    desfase_ms = tiempo_mas_lento - t
+                    # A 50Hz, 1 muestra = 20ms
+                    self.alignment_offsets[m] = int(round(desfase_ms / 20.0)) 
+                    
                 self.is_aligned = True
-                print("\n[*] Flujo de datos purgado y sincronizado en tiempo real.")
-            
-            # Descartamos iterativamente los paquetes que llegan antes de abrir la compuerta
+                print(f"\n[*] Calibración temporal absoluta. Muestras descartadas: {self.alignment_offsets}")
+
+                for m in self.active_macs_list:
+                    for pkt_samples, pkt_timestamp in self.pre_buffer[m]:
+                        self._process_aligned_packet(m, pkt_samples, pkt_timestamp)
+                self.pre_buffer.clear()
             return 
 
-        # Ejecución normal directa (ya no hay offsets)
-        if self.frames_recorded[mac] < self.target_frames:
-            is_ready, window_time = self.buffers[mac].add_packet(samples, timestamp)
-
-            if is_ready:
-                tensor_2d = np.column_stack((
-                    self.buffers[mac].acc_x, 
-                    self.buffers[mac].acc_y, 
-                    self.buffers[mac].acc_z
-                ))
-                
-                flat_row = [window_time] + list(tensor_2d.flatten()) + [self.current_gesture]
-                
-                if mac not in self.recorded_rows:
-                    self.recorded_rows[mac] = []
-                    
-                self.recorded_rows[mac].append(flat_row)
-                self.frames_recorded[mac] += 1
-
-        if self.use_visualizer:
-            self.visualizer.update(mac, samples)
+        self._process_aligned_packet(mac, samples, timestamp)
 
     def start_visualizers(self, connected_devices):
         if self.use_visualizer:
@@ -150,11 +140,15 @@ class DataRecorder:
         return saved_files
     
     def _process_aligned_packet(self, mac, samples, timestamp):
-        # Aplicar el descarte progresivamente hasta consumir el offset
         if self.alignment_offsets.get(mac, 0) > 0:
             discard_count = min(len(samples), self.alignment_offsets[mac])
             samples = samples[discard_count:] 
             self.alignment_offsets[mac] -= discard_count
+            
+            # [CRÍTICO]: Si descartamos muestras, el tiempo físico real del array 
+            # restante ha avanzado. Debemos actualizar el timestamp para que
+            # el SignalBuffer y la IA cuadren la ventana temporal correctamente.
+            timestamp += discard_count * 20 
             
             if not samples: 
                 return
