@@ -30,10 +30,10 @@ class ConsoleUI:
     @staticmethod
     async def get_position_alias():
         opciones_validas = {
-            "1": "Mano_Izquierda", "2": "Mano_Derecha",
-            "3": "Tobillo_Izquierdo", "4": "Tobillo_Derecho",
-            "5": "Cadera_Izquierda", "6": "Cadera_Derecha",
-            "7": "Personalizado"
+            "1": "CManoDerecha", "2": "CManoIzquierda",
+            "3": "CPecho", "4": "CCadera",
+            "5": "SManoDerecha", "6": "SManoIzquierda",
+            "7": "SPecho", "8": "SCadera", "9": "Personalizado",
         }
 
         while True:
@@ -44,7 +44,7 @@ class ConsoleUI:
             eleccion = (await ConsoleUI.get_input("\nElija una opción: ")).strip()
 
             if eleccion in opciones_validas:
-                if eleccion == "7":
+                if eleccion == "9":  # Personalizado
                     alias = await ConsoleUI.get_input("Introduzca el alias personalizado: ")
                     return alias.strip().replace(" ", "_")
                 return opciones_validas[eleccion]
