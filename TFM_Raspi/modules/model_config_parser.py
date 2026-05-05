@@ -15,7 +15,7 @@ class ModelConfigParser:
         self.configs_dir = configs_dir
 
     def get_available_models(self):
-        """Devuelve una lista con los nombres de los modelos disponibles (.json)."""
+        # Devuelve una lista con los nombres de los modelos disponibles (.json)
         try:
             # Escanea el directorio y limpia la extensión .json para mostrar al usuario
             return [f.replace('.json', '') for f in os.listdir(self.models_dir) if f.endswith('.json')]

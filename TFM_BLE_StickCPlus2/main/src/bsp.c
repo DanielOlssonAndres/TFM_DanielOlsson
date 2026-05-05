@@ -3,7 +3,7 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "freertos/FreeRTOS.h"
-#include "esp_timer.h" // [CAMBIO] Sustituye a timers.h
+#include "esp_timer.h" 
 #include "esp_log.h" 
 
 #include "mpu6886.h"
@@ -121,7 +121,7 @@ esp_err_t bsp_imu_register_interrupt(void (*isr_handler)(void*), void* arg) {
     esp_err_t err = esp_timer_create(&timer_args, &imu_timer);
     if (err != ESP_OK) return err;
     
-    // 20000 microsegundos = 20 ms = 50Hz exactos independientes del scheduler
+    // 20000 microsegundos = 20 ms = 50Hz 
     return esp_timer_start_periodic(imu_timer, 20000); 
 }
 

@@ -2,16 +2,6 @@
 #include "driver/i2c.h"
 #include "sys_config.h"
 
-/* MAPA DE REGISTROS DEL MPU6050 */
-#define MPU6050_ADDR        0x68 // Dirección I2C por defecto del MPU6050 (cuando AD0 = 0)
-#define MPU6050_PWR_MGMT_1  0x6B // Registro para gestión de energía (reset, sleep, selección de reloj)
-#define MPU6050_ACCEL_CONFIG 0x1C // Configuración del rango de escala completa del acelerómetro (±2g, ±4g, ±8g, ±16g)
-#define MPU6050_ACCEL_XOUT_H 0x3B // Primer registro de datos del acelerómetro (eje X, byte alto). Los siguientes 5 registros contienen el resto (X_L, Y_H, Y_L, Z_H, Z_L)
-#define MPU6050_SMPLRT_DIV  0x19 // Divisor de la tasa de muestreo (Sample Rate = Gyro_Rate / (1 + SMPLRT_DIV))
-#define MPU6050_CONFIG      0x1A // Configuración del Filtro Pasa Baja Digital (DLPF) y sincronización
-#define MPU6050_INT_PIN_CFG 0x37 // Configuración del comportamiento del pin físico de interrupción (nivel activo, push-pull/open-drain, latch)
-#define MPU6050_INT_ENABLE  0x38 // Registro para habilitar fuentes de interrupción 
-
 static esp_err_t mpu6050_write_byte(uint8_t reg_addr, uint8_t data) {
     i2c_cmd_handle_t cmd;
     esp_err_t ret;
@@ -124,7 +114,7 @@ esp_err_t mpu6050_read_accel(accel_raw_t *sample) {
     /* Leer el 6º y último byte enviando un NACK para indicar el fin de la lectura */
     i2c_master_read_byte(cmd, &raw_data[5], I2C_MASTER_NACK);
     
-    /* 5. Finalizar transacción */
+    /* Finalizar transacción */
     i2c_master_stop(cmd);
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);

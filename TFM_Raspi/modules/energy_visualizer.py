@@ -7,8 +7,6 @@ from collections import deque
 
 class FiltroExponencial3Ejes:
     # Filtro IIR (Infinite Impulse Response) paso alto basado en Media Móvil Exponencial 
-    # Se utiliza para aislar la aceleración lineal dinámica, eliminando el componente 
-    # continuo (DC) que representa el vector de la gravedad terrestre (1g).
     def __init__(self, alpha=0.9):
         self.alpha = alpha
         self.g = np.zeros(3)

@@ -59,7 +59,7 @@ class DataRecorder:
         return max(self.frames_recorded.values())
 
     def process_incoming_data(self, mac, alias, samples, timestamp=None):
-        """Punto de entrada de datos desde BLEManager."""
+        # Punto de entrada de datos desde BLEManager
         if mac not in self.aliases:
             self.aliases[mac] = alias
 
