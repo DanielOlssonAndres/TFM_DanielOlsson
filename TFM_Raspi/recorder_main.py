@@ -112,7 +112,29 @@ class AppRecorderController(BaseController):
         if self.recorder.use_visualizer:
             self.recorder.stop_visualizers()
 
-        archivos_creados = self.recorder.save_data(gestures, self.ble.connected_devices)
+        # Renombrado interactivo de archivos CSV generados
+        default_names = self.recorder.get_default_filenames(gestures, self.ble.connected_devices)
+        file_mapping = {}
+        
+        print()
+        ConsoleUI.show_info("CONFIGURACIÓN DE NOMBRES DE ARCHIVO")
+        
+        for mac, default_name in default_names.items():
+            print(f"\nNombre actual del CSV: {default_name}")
+            nuevo_nombre = await ConsoleUI.get_input("Pulse ENTER para confirmar este nombre o introduzca un nuevo nombre: ")
+            nuevo_nombre = nuevo_nombre.strip()
+            
+            # Validación e inyección de extensión
+            if nuevo_nombre:
+                if not nuevo_nombre.lower().endswith('.csv'):
+                    nuevo_nombre += '.csv'
+                file_mapping[mac] = nuevo_nombre
+            else:
+                file_mapping[mac] = default_name
+
+        # Ejecución del guardado
+        archivos_creados = self.recorder.save_data(file_mapping)
+        
         ConsoleUI.show_info("SECUENCIA FINALIZADA. Archivos guardados:")
         for f in archivos_creados:
             print(f"   - {f}")

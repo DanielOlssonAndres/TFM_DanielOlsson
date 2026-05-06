@@ -120,25 +120,32 @@ class DataRecorder:
         self.recorded_rows.clear()
         self.frames_recorded.clear()
 
-    def save_data(self, gestures_list, connected_devices):
+    def get_default_filenames(self, gestures_list, connected_devices):
+        gesture_str = "".join([g[:3].capitalize() for g in gestures_list])
+        time_str = datetime.now().strftime("%H%M")
+        default_names = {}
+        
+        for mac in self.recorded_rows.keys():
+            alias_limpio = self.aliases.get(mac, "Unknown").replace("_", "").replace(" ", "")
+            dev_name_limpio = connected_devices.get(mac, {}).get("name", "UnknownDev").replace("_", "").replace(" ", "")
+            default_names[mac] = f"{dev_name_limpio}_{alias_limpio}_{gesture_str}_{time_str}.csv"
+            
+        return default_names
+
+    def save_data(self, file_mapping):
         os.makedirs("grabaciones", exist_ok=True)
         saved_files = []
         
-        gesture_str = "".join([g[:3].capitalize() for g in gestures_list])
-        time_str = datetime.now().strftime("%H%M")
-        
         for mac, rows in self.recorded_rows.items():
-            alias_limpio = self.aliases.get(mac, "Unknown").replace("_", "").replace(" ", "")
-            dev_name_limpio = connected_devices.get(mac, {}).get("name", "UnknownDev").replace("_", "").replace(" ", "")
-            
-            filename = f"{dev_name_limpio}_{alias_limpio}_{gesture_str}_{time_str}.csv"
-            filepath = os.path.join("grabaciones", filename)
-            
-            with open(filepath, 'w', newline='') as f:
-                writer = csv.writer(f)
-                for row in rows:
-                    writer.writerow(row)
-                    
-            saved_files.append(filepath)
+            if mac in file_mapping:
+                filename = file_mapping[mac]
+                filepath = os.path.join("grabaciones", filename)
+                
+                with open(filepath, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    for row in rows:
+                        writer.writerow(row)
+                        
+                saved_files.append(filepath)
         
         return saved_files
