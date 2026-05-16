@@ -1,0 +1,2 @@
+DEVICES: chest, waist, wrist_L, wrist_R
+CLASSES: BackhandRH, BackhandTwoH, Drive, Lob, Serve, Waiting
